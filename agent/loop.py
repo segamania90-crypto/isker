@@ -337,6 +337,49 @@ def run_task(state: SessionState, user_task: str) -> tuple[str, list[dict]]:
                     tool_result = {"error": str(e)}
                     logger.warning("Инструмент %s упал: %s", tool_name, e)
 
+                # Автоматическое дочитывание read_file при обрезке
+                if tool_name == "read_file" and isinstance(tool_result.get("result"), dict):
+                    res = tool_result["result"]
+                    if res.get("truncated") or "next_offset" in res:
+                        parts = [res.get("content", "")]
+                        offset = res.get("next_offset")
+                        path_arg = args.get("path")
+                        truncated_final = True
+                        # Максимум 20 частей всего (первая уже получена)
+                        for _ in range(19):
+                            if offset is None:
+                                truncated_final = False
+                                break
+                            try:
+                                part = _execute_tool(state, "read_file", {"path": path_arg, "offset": offset})
+                            except Exception as e:
+                                logger.warning("Ошибка дочитывания read_file: %s", e)
+                                break
+                            if not isinstance(part.get("result"), dict):
+                                break
+                            part_res = part["result"]
+                            parts.append(part_res.get("content", ""))
+                            if not part_res.get("truncated") and "next_offset" not in part_res:
+                                offset = None
+                                truncated_final = False
+                                break
+                            offset = part_res.get("next_offset")
+                        full_text = "".join(parts)
+                        if truncated_final:
+                            full_text += "\n\n[ВНИМАНИЕ: файл мог быть прочитан не полностью — достигнут лимит повторов чтения (20 частей).]"
+                        combined_res = {
+                            "path": res.get("path", path_arg),
+                            "content": full_text,
+                            "truncated": truncated_final,
+                            "offset": res.get("offset", 0),
+                            "total_chars": len(full_text),
+                            "next_offset": None,
+                            "estimated_tokens": fs.estimate_tokens(full_text),
+                        }
+                        if truncated_final:
+                            combined_res["note"] = "Достигнут лимит повторов чтения файла."
+                        tool_result = {"result": combined_res}
+
                 if tool_name == "write_file" and "result" in tool_result:
                     r = tool_result["result"]
                     status = (
