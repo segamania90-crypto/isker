@@ -11,6 +11,7 @@ from __future__ import annotations
 import fnmatch
 import os
 import re
+import time
 from datetime import datetime
 from pathlib import Path     
 
@@ -58,7 +59,7 @@ def get_current_datetime(timezone: str | None = None) -> dict:
     }
 
 
-def list_tree(root: str, max_depth: int = 6, ignore_dirs: set[str] | None = None) -> str:
+def list_tree(root: str, max_depth: int = 6, ignore_dirs: set[str] | None = None, max_files: int = 2000, max_seconds: float = 10) -> dict:
     """
     Строит текстовое дерево файлов проекта, чтобы агент понимал структуру,
     не читая содержимое. Возвращает готовую строку для вставки в промпт.
@@ -67,7 +68,15 @@ def list_tree(root: str, max_depth: int = 6, ignore_dirs: set[str] | None = None
     root_path = Path(root).resolve()
     lines: list[str] = [str(root_path)]
 
+    start_time = time.time()
+    file_count = 0
+    truncated = False
+    reason = None
+
     def _walk(path: Path, prefix: str, depth: int):
+        nonlocal truncated, reason, file_count
+        if truncated:
+            return
         if depth > max_depth:
             return
         try:
@@ -78,14 +87,30 @@ def list_tree(root: str, max_depth: int = 6, ignore_dirs: set[str] | None = None
         except PermissionError:
             return
         for i, entry in enumerate(entries):
+            if truncated:
+                return
+            if time.time() - start_time >= max_seconds:
+                truncated = True
+                reason = "time_limit"
+                return
             connector = "└── " if i == len(entries) - 1 else "├── "
             lines.append(f"{prefix}{connector}{entry.name}")
             if entry.is_dir():
                 extension = "    " if i == len(entries) - 1 else "│   "
                 _walk(entry, prefix + extension, depth + 1)
+            else:
+                file_count += 1
+                if file_count >= max_files:
+                    truncated = True
+                    reason = "file_limit"
+                    return
 
     _walk(root_path, "", 1)
-    return "\n".join(lines)
+    return {
+        "content": "\n".join(lines),
+        "truncated": truncated,
+        "reason": reason,
+    }
 
 
 def search_content(
@@ -94,7 +119,9 @@ def search_content(
     glob: str = "*",
     max_matches: int = 50,
     regex: bool = False,
-) -> list[dict]:
+    max_files: int = 2000,
+    max_seconds: float = 10,
+) -> dict:
     """
     Ищет текст/паттерн по содержимому файлов проекта.
     По умолчанию — простой подстрочный поиск (без учёта регистра);
@@ -106,11 +133,33 @@ def search_content(
     matches: list[dict] = []
     compiled = re.compile(pattern) if regex else None
 
+    start_time = time.time()
+    file_count = 0
+    truncated = False
+    reason = None
+
     for dirpath, dirnames, filenames in os.walk(root_path):
+        if truncated:
+            break
+        if time.time() - start_time >= max_seconds:
+            truncated = True
+            reason = "time_limit"
+            break
         dirnames[:] = [d for d in dirnames if d not in DEFAULT_IGNORE_DIRS and not d.startswith(".")]
         for filename in filenames:
+            if truncated:
+                break
+            if time.time() - start_time >= max_seconds:
+                truncated = True
+                reason = "time_limit"
+                break
             if not fnmatch.fnmatch(filename, glob):
                 continue
+            file_count += 1
+            if file_count >= max_files:
+                truncated = True
+                reason = "file_limit"
+                break
             filepath = Path(dirpath) / filename
             try:
                 with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
@@ -123,10 +172,19 @@ def search_content(
                                 "text": line.strip(),
                             })
                             if len(matches) >= max_matches:
-                                return matches
+                                return {
+                                    "matches": matches,
+                                    "truncated": truncated,
+                                    "reason": reason,
+                                }
             except (UnicodeDecodeError, OSError):
                 continue
-    return matches
+
+    return {
+        "matches": matches,
+        "truncated": truncated,
+        "reason": reason,
+    }
 
 
 def read_file(root: str, relative_path: str, max_chars: int = 20000, offset: int = 0) -> dict:
