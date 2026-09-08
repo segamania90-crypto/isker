@@ -289,6 +289,7 @@ def run_task(state: SessionState, user_task: str) -> tuple[str, list[dict]]:
     messages.extend(state.history)
     messages.append({"role": "user", "content": user_task})
 
+    failed_parse_count = 0
     try:
         for step in range(MAX_STEPS):
             # Простой шаг (решить, что делать дальше) идёт на "fast" модель;
@@ -302,7 +303,12 @@ def run_task(state: SessionState, user_task: str) -> tuple[str, list[dict]]:
 
             try:
                 decision = _parse_model_json(response.text)
+                failed_parse_count = 0
             except json.JSONDecodeError:
+                failed_parse_count += 1
+                if failed_parse_count >= 3:
+                    error_text = "Модель вернула некорректный ответ несколько раз подряд, попробуйте переформулировать задачу или сменить модель"
+                    return error_text, changed_files
                 # Модель не выдержала формат — просим её исправиться, не падаем сразу.
                 messages.append({"role": "assistant", "content": response.text})
                 messages.append({
