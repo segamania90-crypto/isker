@@ -1,0 +1,161 @@
+"""
+Универсальные (языко-агностичные) инструменты для работы с проектом.
+
+Ничего не знает про GDScript, Godot, .tscn и т.п. — просто текст и файлы.
+Специфика языка/задачи остаётся на уровне промпта (agent/loop.py), а не
+здесь. Так один и тот же код работает и для Godot-проекта, и для сайта.
+"""
+
+from __future__ import annotations
+
+import fnmatch
+import os
+import re
+from pathlib import Path
+
+# Директории, которые никогда не нужно показывать агенту.
+DEFAULT_IGNORE_DIRS = {
+    ".git", "__pycache__", "node_modules", ".godot", "venv", ".venv",
+    "dist", "build", ".idea", ".vscode",
+}
+
+# Грубая оценка: ~4 символа на токен (усреднённо для латиницы/кода).
+CHARS_PER_TOKEN = 4
+
+
+def estimate_tokens(text: str) -> int:
+    """Грубая оценка числа токенов — для решения, влезет ли файл в контекст."""
+    return max(1, len(text) // CHARS_PER_TOKEN)
+
+
+def list_tree(root: str, max_depth: int = 6, ignore_dirs: set[str] | None = None) -> str:
+    """
+    Строит текстовое дерево файлов проекта, чтобы агент понимал структуру,
+    не читая содержимое. Возвращает готовую строку для вставки в промпт.
+    """
+    ignore_dirs = ignore_dirs or DEFAULT_IGNORE_DIRS
+    root_path = Path(root).resolve()
+    lines: list[str] = [str(root_path)]
+
+    def _walk(path: Path, prefix: str, depth: int):
+        if depth > max_depth:
+            return
+        try:
+            entries = sorted(
+                [p for p in path.iterdir() if p.name not in ignore_dirs and not p.name.startswith(".")],
+                key=lambda p: (p.is_file(), p.name.lower()),
+            )
+        except PermissionError:
+            return
+        for i, entry in enumerate(entries):
+            connector = "└── " if i == len(entries) - 1 else "├── "
+            lines.append(f"{prefix}{connector}{entry.name}")
+            if entry.is_dir():
+                extension = "    " if i == len(entries) - 1 else "│   "
+                _walk(entry, prefix + extension, depth + 1)
+
+    _walk(root_path, "", 1)
+    return "\n".join(lines)
+
+
+def search_content(
+    root: str,
+    pattern: str,
+    glob: str = "*",
+    max_matches: int = 50,
+    regex: bool = False,
+) -> list[dict]:
+    """
+    Ищет текст/паттерн по содержимому файлов проекта.
+    По умолчанию — простой подстрочный поиск (без учёта регистра);
+    если regex=True, pattern трактуется как регулярное выражение.
+
+    Возвращает список {"file": путь, "line": номер, "text": строка}.
+    """
+    root_path = Path(root).resolve()
+    matches: list[dict] = []
+    compiled = re.compile(pattern) if regex else None
+
+    for dirpath, dirnames, filenames in os.walk(root_path):
+        dirnames[:] = [d for d in dirnames if d not in DEFAULT_IGNORE_DIRS and not d.startswith(".")]
+        for filename in filenames:
+            if not fnmatch.fnmatch(filename, glob):
+                continue
+            filepath = Path(dirpath) / filename
+            try:
+                with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+                    for lineno, line in enumerate(f, start=1):
+                        hit = compiled.search(line) if compiled else (pattern.lower() in line.lower())
+                        if hit:
+                            matches.append({
+                                "file": str(filepath.relative_to(root_path)),
+                                "line": lineno,
+                                "text": line.strip(),
+                            })
+                            if len(matches) >= max_matches:
+                                return matches
+            except (UnicodeDecodeError, OSError):
+                continue
+    return matches
+
+
+def read_file(root: str, relative_path: str, max_chars: int = 20000) -> dict:
+    """
+    Читает файл по относительному пути внутри проекта.
+    Обрезает слишком большие файлы и явно сообщает об этом в отчёте,
+    чтобы агент не молча получал усечённый код.
+    """
+    full_path = (Path(root) / relative_path).resolve()
+    if not str(full_path).startswith(str(Path(root).resolve())):
+        raise ValueError("Путь выходит за пределы разрешённого проекта")
+    if not full_path.exists():
+        raise FileNotFoundError(f"Файл не найден: {relative_path}")
+
+    content = full_path.read_text(encoding="utf-8", errors="ignore")
+    truncated = len(content) > max_chars
+    if truncated:
+        content = content[:max_chars]
+
+    return {
+        "path": relative_path,
+        "content": content,
+        "truncated": truncated,
+        "estimated_tokens": estimate_tokens(content),
+    }
+
+
+def write_file(root: str, relative_path: str, content: str, write_enabled: bool = False) -> dict:
+    """
+    Записывает содержимое в файл в рамках разрешённой сессии.
+    write_enabled — общий тумблер на запись/изменение файлов проекта,
+    выставляется один раз при старте сессии (start_session/reset_session).
+    Если False — запись в любой файл запрещена, независимо от пути.
+
+    Примечание: это сознательное архитектурное решение — отказ от
+    ограничения по конкретным файлам в пользу общего разрешения на запись.
+    Защита теперь не "какие файлы можно трогать", а "можно трогать
+    файлы вообще, в этой сессии, или нет".
+    """
+    if not write_enabled:
+        raise PermissionError(
+            "Запись в файлы проекта не разрешена в этой сессии "
+            "(write_enabled=False). Включите разрешение на запись при старте сессии."
+        )
+
+    full_path = (Path(root) / relative_path).resolve()
+    if not str(full_path).startswith(str(Path(root).resolve())):
+        raise ValueError("Путь выходит за пределы разрешённого проекта")
+
+    full_path.parent.mkdir(parents=True, exist_ok=True)
+    existed = full_path.exists()
+    old_content = full_path.read_text(encoding="utf-8", errors="ignore") if existed else ""
+
+    full_path.write_text(content, encoding="utf-8")
+
+    return {
+        "path": relative_path,
+        "created": not existed,
+        "bytes_written": len(content.encode("utf-8")),
+        "lines_before": old_content.count("\n") + 1 if existed else 0,
+        "lines_after": content.count("\n") + 1,
+    }
