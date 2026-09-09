@@ -69,12 +69,14 @@ def main():
             continue
 
         try:
-            answer = run_task(state, task)
+            answer, changed_files = run_task(state, task)
         except Exception as e:
             import traceback
             traceback.print_exc()
             continue
         print(f"\nАгент: {answer}")
+        if changed_files:
+            print(f"Изменённые файлы: {changed_files}")
 
 
 if __name__ == "__main__":
