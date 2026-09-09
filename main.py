@@ -19,11 +19,26 @@ load_dotenv()
 
 from agent.loop import SessionState, run_task, update_project_summary
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+import os
+from logging.handlers import RotatingFileHandler
+
+_log_level_name = os.getenv("LOG_LEVEL", "INFO").upper()
+_log_level = getattr(logging, _log_level_name, logging.INFO)
+
+_formatter = logging.Formatter(
+    fmt="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     datefmt="%H:%M:%S",
 )
+
+_file_handler = RotatingFileHandler(
+    "isker.log", maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8"
+)
+_file_handler.setFormatter(_formatter)
+
+_console_handler = logging.StreamHandler()
+_console_handler.setFormatter(_formatter)
+
+logging.basicConfig(level=_log_level, handlers=[_file_handler, _console_handler])
 
 
 def main():
