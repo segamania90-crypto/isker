@@ -49,7 +49,7 @@ def main():
         print("Режим только чтения (запись файлов недоступна).")
 
     session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
-    state = SessionState(project_root=project_root, session_id=session_id, allowed_files=allowed_files)
+    state = SessionState(project_root=project_root, session_id=session_id, write_enabled=bool(allowed_files))
 
     print("\nВведи задачу (или 'exit' для выхода).")
     while True:
