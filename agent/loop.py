@@ -143,6 +143,7 @@ class SessionState:
     project_root: str | None
     session_id: str
     write_enabled: bool = False
+    allowed_files: set[str] = field(default_factory=set)  # список файлов, разрешённых к записи; пусто = ограничений нет
     history: list[dict] = field(default_factory=list)  # короткая память сессии
     memory: Memory = field(default_factory=Memory)
     task_cache: dict[str, tuple[str, list[dict]]] = field(default_factory=dict)
@@ -185,8 +186,14 @@ def _execute_tool(state: SessionState, tool: str, args: dict) -> dict:
         print(f">>> READ_FILE вызван: path={args['path']} offset={offset}")
         return {"result": fs.read_file(state.project_root, args["path"], offset=offset)}
     if tool == "write_file":
+        target_path = args["path"]
+        if state.allowed_files and target_path not in state.allowed_files:
+            raise PermissionError(
+                f"Запись в файл '{target_path}' не разрешена в этой сессии. "
+                f"Разрешены к записи только: {sorted(state.allowed_files)}."
+            )
         return {"result": fs.write_file(
-            state.project_root, args["path"], args["content"], write_enabled=state.write_enabled
+            state.project_root, target_path, args["content"], write_enabled=state.write_enabled
         )}
     
     raise ValueError(f"Неизвестный инструмент: {tool}")
