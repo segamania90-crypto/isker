@@ -49,8 +49,8 @@ class LLMResponse:
 
 MODELS = {
     "groq": {
-        "fast": os.getenv("GROQ_MODEL_FAST", "llama-3.1-8b-instant"),
-        "strong": os.getenv("GROQ_MODEL_STRONG", "llama-3.3-70b-versatile"),
+        "fast": os.getenv("GROQ_MODEL_FAST", "openai/gpt-oss-20b"),
+        "strong": os.getenv("GROQ_MODEL_STRONG", "openai/gpt-oss-120b"),
     },
     "openrouter": {
         "fast": os.getenv("OPENROUTER_MODEL_FAST", "meta-llama/llama-3.1-8b-instruct:free"),
