@@ -59,7 +59,7 @@ def main():
             print("\nЗавершение.")
             sys.exit(0)
 
-        if task.lower() in ("exit", "quit", "выход"):
+        if task.lower() in ("exit", "quit", "выход", "/exit", "/quit"):
             print("\nОбновляю долгую память проекта...")
             summary = update_project_summary(state)
             print(f"Саммари сохранено:\n{summary}")
