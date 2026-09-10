@@ -149,3 +149,41 @@ def test_extra_ignore_dirs_from_env(monkeypatch):
     finally:
         monkeypatch.delenv("EXTRA_IGNORE_DIRS", raising=False)
         importlib.reload(fs)
+
+    def test_list_tree_truncates_by_max_files(tmp_path):
+        for i in range(5):
+            (tmp_path / f"file_{i}.txt").write_text("x", encoding="utf-8")
+
+        result = fs.list_tree(str(tmp_path), max_files=2)
+
+        assert result["truncated"] is True
+        assert result["reason"] == "file_limit"
+
+
+def test_list_tree_truncates_by_max_seconds(tmp_path):
+    (tmp_path / "file_0.txt").write_text("x", encoding="utf-8")
+    (tmp_path / "file_1.txt").write_text("x", encoding="utf-8")
+
+    result = fs.list_tree(str(tmp_path), max_seconds=0)
+
+    assert result["truncated"] is True
+    assert result["reason"] == "time_limit"
+
+
+def test_search_content_truncates_by_max_files(tmp_path):
+    for i in range(5):
+        (tmp_path / f"file_{i}.py").write_text("MAGIC_WORD\n", encoding="utf-8")
+
+    result = fs.search_content(str(tmp_path), "MAGIC_WORD", max_files=2)
+
+    assert result["truncated"] is True
+    assert result["reason"] == "file_limit"
+
+
+def test_search_content_truncates_by_max_seconds(tmp_path):
+    (tmp_path / "file_0.py").write_text("MAGIC_WORD\n", encoding="utf-8")
+
+    result = fs.search_content(str(tmp_path), "MAGIC_WORD", max_seconds=0)
+
+    assert result["truncated"] is True
+    assert result["reason"] == "time_limit"    
