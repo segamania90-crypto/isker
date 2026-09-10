@@ -16,10 +16,18 @@ from datetime import datetime
 from pathlib import Path     
 
 # Директории, которые никогда не нужно показывать агенту.
+# Базовый набор + опциональные дополнения из .env (EXTRA_IGNORE_DIRS,
+# через запятую, например: EXTRA_IGNORE_DIRS=.pytest_cache,coverage_html)
+# — так пользователь может добавить свои папки под конкретный проект,
+# не трогая код.
+_EXTRA_IGNORE_DIRS = {
+    d.strip() for d in os.getenv("EXTRA_IGNORE_DIRS", "").split(",") if d.strip()
+}
+
 DEFAULT_IGNORE_DIRS = {
     ".git", "__pycache__", "node_modules", ".godot", "venv", ".venv",
     "dist", "build", ".idea", ".vscode",
-}
+} | _EXTRA_IGNORE_DIRS
 
 # Грубая оценка: ~4 символа на токен (усреднённо для латиницы/кода).
 CHARS_PER_TOKEN = 4
@@ -121,6 +129,7 @@ def search_content(
     regex: bool = False,
     max_files: int = 2000,
     max_seconds: float = 10,
+    ignore_dirs: set[str] | None = None,
 ) -> dict:
     """
     Ищет текст/паттерн по содержимому файлов проекта.
@@ -132,6 +141,7 @@ def search_content(
     root_path = Path(root).resolve()
     matches: list[dict] = []
     compiled = re.compile(pattern) if regex else None
+    ignore_dirs = ignore_dirs or DEFAULT_IGNORE_DIRS
 
     start_time = time.time()
     file_count = 0
@@ -145,7 +155,7 @@ def search_content(
             truncated = True
             reason = "time_limit"
             break
-        dirnames[:] = [d for d in dirnames if d not in DEFAULT_IGNORE_DIRS and not d.startswith(".")]
+            dirnames[:] = [d for d in dirnames if d not in ignore_dirs and not d.startswith(".")]
         for filename in filenames:
             if truncated:
                 break

@@ -48,7 +48,12 @@ COMPRESSION_THRESHOLD = 0.7
 # обычном "final" ответе модели, и в except-блоке сбоя всего цикла.
 # Временное решение только для русского языка.
 # TODO: в будущем учитывать self.lang из UI для перевода на en/es.
-_ERROR_PATTERNS = {
+# Пункт 3 аудита: технические сообщения об ошибках заменяются на понятные
+# пользователю. Ключи словарей — русские фразы, потому что сами исходные
+# сообщения об ошибках в коде проекта написаны на русском (см. filesystem.py,
+# loop.py) — это не меняется. Меняется только язык понятного текста (значения),
+# в зависимости от state.lang.
+_ERROR_PATTERNS_RU = {
     "api_key не задан": "Не настроен доступ к одному из провайдеров ИИ. Проверьте файл .env — там должны быть заданы ключи API.",
     "rate limit": "Сейчас все провайдеры ИИ перегружены или недоступны. Попробуйте повторить запрос через несколько минут.",
     "провайдеры отказали": "Сейчас все провайдеры ИИ перегружены или недоступны. Попробуйте повторить запрос через несколько минут.",
@@ -58,25 +63,56 @@ _ERROR_PATTERNS = {
     "запись в файлы проекта не разрешена": "Запись в файлы не разрешена в этой сессии. Включите разрешение на запись при старте сессии.",
 }
 
+_ERROR_PATTERNS_EN = {
+    "api_key не задан": "Access to one of the AI providers is not configured. Check the .env file — the API keys must be set there.",
+    "rate limit": "All AI providers are currently overloaded or unavailable. Please try again in a few minutes.",
+    "провайдеры отказали": "All AI providers are currently overloaded or unavailable. Please try again in a few minutes.",
+    "не удалось получить страницу": "Could not load the specified web page. Check that the link is correct and the page is accessible.",
+    "файл не найден": "The specified file was not found in the project. Check the path and try again.",
+    "путь выходит за пределы": "The requested file is outside the allowed project folder.",
+    "запись в файлы проекта не разрешена": "Writing to files is not allowed in this session. Enable write access at session start.",
+}
 
-def _friendlify_error(text: str) -> str:
-    """Заменяет известный технический текст ошибки на понятный пользователю.
-    Если совпадений нет — возвращает text без изменений."""
+_ERROR_PATTERNS_ES = {
+    "api_key не задан": "No se ha configurado el acceso a uno de los proveedores de IA. Revisa el archivo .env — allí deben estar las claves API.",
+    "rate limit": "Todos los proveedores de IA están sobrecargados o no disponibles ahora mismo. Inténtalo de nuevo en unos minutos.",
+    "провайдеры отказали": "Todos los proveedores de IA están sobrecargados o no disponibles ahora mismo. Inténtalo de nuevo en unos minutos.",
+    "не удалось получить страницу": "No se pudo cargar la página web indicada. Comprueba que el enlace es correcto y la página está accesible.",
+    "файл не найден": "No se encontró el archivo indicado en el proyecto. Comprueba la ruta e inténtalo de nuevo.",
+    "путь выходит за пределы": "El archivo solicitado está fuera de la carpeta del proyecto permitida.",
+    "запись в файлы проекта не разрешена": "No se permite escribir archivos en esta sesión. Habilita el permiso de escritura al iniciar la sesión.",
+}
+
+_ERROR_PATTERNS_BY_LANG = {
+    "ru": _ERROR_PATTERNS_RU,
+    "en": _ERROR_PATTERNS_EN,
+    "es": _ERROR_PATTERNS_ES,
+}
+
+
+def _match_known_error(text: str, lang: str = "ru") -> str | None:
+    """Проверяет, совпадает ли text с одним из известных паттернов ошибок.
+    Возвращает готовый переведённый текст, либо None, если совпадений нет."""
+    patterns = _ERROR_PATTERNS_BY_LANG.get(lang, _ERROR_PATTERNS_RU)
     lowered = text.lower()
-    for pattern, friendly in _ERROR_PATTERNS.items():
+    for pattern, friendly in patterns.items():
         if pattern in lowered:
             logger.warning("Техническая ошибка скрыта от пользователя: %s", text)
             return friendly
-    return text
+    return None
+
+
+def _friendlify_error(text: str, lang: str = "ru") -> str:
+    """Заменяет известный технический текст ошибки на понятный пользователю,
+    на языке lang (ru/en/es). Если совпадений нет — возвращает text без изменений."""
+    return _match_known_error(text, lang) or text
 
 
 SYSTEM_PROMPT_TEMPLATE = """Ты — AI-агент, ускоряющий рутинную работу разработчика в проекте.
 Проект языко-агностичен: код может быть на любом языке (GDScript, Python, JS и т.д.) —
 ты уже умеешь их понимать, отдельных инструкций по языку не требуется.
 
-Всегда отвечай пользователю (в поле "content" финального ответа) на том языке,
-на котором он задал вопрос — если он пишет по-русски, отвечай по-русски; если
-по-английски — по-английски, и т.д.
+{language_instruction}
 
 Твоя основная специализация — работа с кодом и файлами ЭТОГО проекта (чтение,
 поиск, редактирование, рефакторинг, баги, тесты, документация) — для этого
@@ -143,6 +179,7 @@ class SessionState:
     project_root: str | None
     session_id: str
     write_enabled: bool = False
+    lang: str = "ru"
     allowed_files: set[str] = field(default_factory=set)  # список файлов, разрешённых к записи; пусто = ограничений нет
     history: list[dict] = field(default_factory=list)  # короткая память сессии
     memory: Memory = field(default_factory=Memory)
@@ -183,7 +220,6 @@ def _execute_tool(state: SessionState, tool: str, args: dict) -> dict:
         )}
     if tool == "read_file":
         offset = args.get("offset", 0)
-        print(f">>> READ_FILE вызван: path={args['path']} offset={offset}")
         return {"result": fs.read_file(state.project_root, args["path"], offset=offset)}
     if tool == "write_file":
         target_path = args["path"]
@@ -245,6 +281,9 @@ def _trim_context_if_needed(messages: list[dict]) -> list[dict]:
     return new_messages
 
 
+_LANG_NAMES = {"ru": "русском", "en": "английском (English)", "es": "испанском (español)"}
+
+
 def run_task(state: SessionState, user_task: str) -> tuple[str, list[dict]]:
     """
     Запускает цикл агента для одной задачи пользователя в рамках сессии.
@@ -253,6 +292,14 @@ def run_task(state: SessionState, user_task: str) -> tuple[str, list[dict]]:
     Все шаги пишутся в state.history.
     """
     import re
+
+    lang_name = _LANG_NAMES.get(state.lang, _LANG_NAMES["ru"])
+    language_instruction = (
+        f"КРИТИЧЕСКИ ВАЖНО — ЯЗЫК ОТВЕТА: всегда отвечай пользователю (в поле "
+        f'"content" финального ответа) СТРОГО на {lang_name} языке — независимо '
+        f"от того, на каком языке написан сам вопрос пользователя. Язык ответа "
+        f"определяется настройкой интерфейса, а не текстом вопроса."
+    )
     cache_key = re.sub(r'[.,!?;:]+$', '', user_task.strip().lower())
     cache_key = re.sub(r'\s+', ' ', cache_key)
     if cache_key in state.task_cache:
@@ -312,12 +359,13 @@ def run_task(state: SessionState, user_task: str) -> tuple[str, list[dict]]:
             "ссылке. Используй ТОЛЬКО если пользователь сам явно указал URL (например, ссылку на "
             "документацию). Никогда не вызывай этот инструмент по собственной инициативе без "
             "явно данной пользователем ссылки, и никогда не пытайся обойти сайт по внутренним "
-            "ссылкам — только одна страница за раз."
+                "ссылкам — только одна страница за раз."
         )
 
     system_prompt = SYSTEM_PROMPT_TEMPLATE.format(
         tools_section=tools_section,
         project_memory=project_memory_text,
+        language_instruction=language_instruction,
     )
     messages = [{"role": "system", "content": system_prompt}]
     messages.extend(state.history)
@@ -355,7 +403,7 @@ def run_task(state: SessionState, user_task: str) -> tuple[str, list[dict]]:
 
             if decision.get("action") == "final":
                 final_text = decision.get("content", "")
-                final_text = _friendlify_error(final_text)
+                final_text = _friendlify_error(final_text, state.lang)
                 state.history.append({"role": "user", "content": user_task})
                 state.history.append({"role": "assistant", "content": final_text})
                 state.memory.log_turn(state.session_id, "user", user_task)
@@ -368,9 +416,22 @@ def run_task(state: SessionState, user_task: str) -> tuple[str, list[dict]]:
                 args = decision.get("args", {})
                 try:
                     tool_result = _execute_tool(state, tool_name, args)
-                except Exception as e:  # инструмент упал — отдаём ошибку модели, пусть решает дальше
-                    tool_result = {"error": str(e)}
+                except Exception as e:
+                    error_str = str(e)
                     logger.warning("Инструмент %s упал: %s", tool_name, e)
+                    known_friendly = _match_known_error(error_str, state.lang)
+                    if known_friendly:
+                        # Известная ошибка — не отдаём модели на пересказ, чтобы
+                        # текст и язык ответа не зависели от того, как модель
+                        # решит сформулировать. Сразу завершаем задачу.
+                        state.history.append({"role": "user", "content": user_task})
+                        state.history.append({"role": "assistant", "content": known_friendly})
+                        state.memory.log_turn(state.session_id, "user", user_task)
+                        state.memory.log_turn(state.session_id, "assistant", known_friendly)
+                        state.task_cache[cache_key] = (known_friendly, changed_files)
+                        return known_friendly, changed_files
+                    # Незнакомая ошибка — отдаём модели, пусть сформулирует сама.
+                    tool_result = {"error": error_str}
 
                 # Автоматическое дочитывание read_file при обрезке
                 if tool_name == "read_file" and isinstance(tool_result.get("result"), dict):
@@ -436,7 +497,7 @@ def run_task(state: SessionState, user_task: str) -> tuple[str, list[dict]]:
             })
     except Exception as e:
         logger.error("Неожиданный сбой в run_task на шаге агента: %s", e)
-        error_str = _friendlify_error(str(e))
+        error_str = _friendlify_error(str(e), state.lang)
         if changed_files:
             files_list = "\n".join(f"- {f['path']} ({f['status']})" for f in changed_files)
             error_text = (

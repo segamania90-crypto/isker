@@ -535,6 +535,8 @@ class MainWindow(QMainWindow):
 
     def change_language(self):
         self.lang = self.lang_selector.currentData()
+        if self.state is not None:
+            self.state.lang = self.lang
         self.apply_translations()
 
 
@@ -548,6 +550,7 @@ class MainWindow(QMainWindow):
             project_root=project_root,
             session_id=session_id,
             write_enabled=write_enabled,
+            lang=self.lang,
         )
 
         if not project_root:
