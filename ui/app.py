@@ -385,7 +385,7 @@ TRANSLATIONS = {
         "es": "sesión iniciada. Se permite escribir/editar archivos del proyecto.",
     },
 
-    "git_commit_reminder": {
+    "backup_reminder": {
         "ru": "⚠️ Перед началом работы советую скопировать весь проект и сохранить копию отдельно — если агент что-то испортит, сможешь вернуться к этому моменту.",
         "en": "⚠️ Before starting, it's recommended to copy the whole project and save it elsewhere — if the agent breaks something, you can go back to this point.",
         "es": "⚠️ Antes de empezar, se recomienda copiar todo el proyecto y guardarlo aparte — si el agente rompe algo, podrás volver a este punto.",
@@ -558,7 +558,7 @@ class MainWindow(QMainWindow):
             self.chat_history.append(f">> ISKER: {self.t('session_started_no_project')}")
         elif self.allow_write_checkbox.isChecked():
             self.chat_history.append(f">> ISKER: {self.t('session_started_write')}")
-            self.chat_history.append(f">> ISKER: {self.t('git_commit_reminder')}")
+            self.chat_history.append(f">> ISKER: {self.t('backup_reminder')}")
         else:
             self.chat_history.append(f">> ISKER: {self.t('session_started_readonly')}")
 
