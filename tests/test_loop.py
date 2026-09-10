@@ -321,6 +321,25 @@ def test_run_task_tool_exception_is_reported_and_loop_continues(state, fake_call
     )
 
 
+
+def test_run_task_known_tool_error_short_circuits_to_friendly_message(state, fake_call_llm, fake_fs):
+    """Известная ошибка инструмента (сессия №17) не должна уходить модели на
+    пересказ — агент сразу возвращает готовый переведённый ответ, минуя
+    модель полностью (кроме одного вызова, где она решила вызвать read_file)."""
+    state.lang = "en"
+    fake_fs.read_file.side_effect = FileNotFoundError("Файл не найден: test.txt")
+    fake_call_llm.return_value = _tool("read_file", {"path": "test.txt"})
+
+    text, changed = loop.run_task(state, "read the file test.txt")
+
+    assert text == (
+        "The specified file was not found in the project. "
+        "Check the path and try again."
+    )
+    assert changed == []
+    fake_call_llm.assert_called_once()  # модель вызвана только 1 раз — не было второго шага на пересказ
+    state.memory.log_turn.assert_any_call("sess-1", "assistant", text)
+
 # ---------------------------------------------------------------------------
 # run_task — автодочитывание read_file
 # ---------------------------------------------------------------------------
@@ -442,6 +461,32 @@ def test_run_task_uses_fast_tier_by_default(state, fake_call_llm):
     assert fake_call_llm.call_args.kwargs["tier"] == "fast"
 
 
+
+# ---------------------------------------------------------------------------
+# run_task — language_instruction в системном промпте (сессия №17)
+# ---------------------------------------------------------------------------
+
+def test_run_task_system_prompt_uses_lang_from_state(state, fake_call_llm):
+    state.lang = "es"
+    fake_call_llm.return_value = _final("listo")
+
+    loop.run_task(state, "tarea")
+
+    first_messages = fake_call_llm.call_args_list[0][0][0]
+    system_content = first_messages[0]["content"]
+    assert "испанском" in system_content
+
+
+def test_run_task_system_prompt_defaults_to_russian_language_instruction(state, fake_call_llm):
+    fake_call_llm.return_value = _final("готово")
+
+    loop.run_task(state, "задача")
+
+    first_messages = fake_call_llm.call_args_list[0][0][0]
+    system_content = first_messages[0]["content"]
+    assert "русском" in system_content    
+
+
 # ---------------------------------------------------------------------------
 # run_task — MAX_STEPS и общий except
 # ---------------------------------------------------------------------------
@@ -516,3 +561,73 @@ def test_update_project_summary_with_history(state, fake_call_llm):
     state.memory.set_fact.assert_called_once_with(
         loop._project_id(state.project_root), "last_session_summary", "новое саммари"
     )
+
+    
+
+# ---------------------------------------------------------------------------
+# _friendlify_error / _match_known_error — i18n (сессия №17)
+# ---------------------------------------------------------------------------
+
+def test_friendlify_error_default_lang_is_russian():
+    result = loop._friendlify_error("Файл не найден: test.txt")
+    assert result == (
+        "Указанный файл не найден в проекте. Проверьте путь и повторите запрос."
+    )
+
+
+def test_friendlify_error_english():
+    result = loop._friendlify_error("Файл не найден: test.txt", "en")
+    assert result == (
+        "The specified file was not found in the project. "
+        "Check the path and try again."
+    )
+
+
+def test_friendlify_error_spanish():
+    result = loop._friendlify_error("Файл не найден: test.txt", "es")
+    assert result == (
+        "No se encontró el archivo indicado en el proyecto. "
+        "Comprueba la ruta e inténtalo de nuevo."
+    )
+
+
+def test_friendlify_error_unknown_lang_falls_back_to_russian():
+    result = loop._friendlify_error("Файл не найден: test.txt", "fr")
+    assert result == (
+        "Указанный файл не найден в проекте. Проверьте путь и повторите запрос."
+    )
+
+
+def test_friendlify_error_no_match_returns_original_text():
+    result = loop._friendlify_error("какая-то совсем незнакомая ошибка", "en")
+    assert result == "какая-то совсем незнакомая ошибка"
+
+
+def test_match_known_error_returns_none_when_no_match():
+    result = loop._match_known_error("незнакомая ошибка", "ru")
+    assert result is None
+
+
+def test_match_known_error_returns_translation_when_match():
+    result = loop._match_known_error("Файл не найден: test.txt", "es")
+    assert result == (
+        "No se encontró el archivo indicado en el proyecto. "
+        "Comprueba la ruta e inténtalo de nuevo."
+    )
+
+    
+
+# ---------------------------------------------------------------------------
+# SessionState — lang по умолчанию (сессия №17)
+# ---------------------------------------------------------------------------
+
+def test_session_state_lang_defaults_to_russian():
+    s = loop.SessionState(project_root="/project", session_id="s", memory=MagicMock())
+    assert s.lang == "ru"
+
+
+def test_session_state_lang_can_be_set_explicitly():
+    s = loop.SessionState(
+        project_root="/project", session_id="s", memory=MagicMock(), lang="en"
+    )
+    assert s.lang == "en"

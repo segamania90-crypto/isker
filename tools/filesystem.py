@@ -155,7 +155,7 @@ def search_content(
             truncated = True
             reason = "time_limit"
             break
-            dirnames[:] = [d for d in dirnames if d not in ignore_dirs and not d.startswith(".")]
+        dirnames[:] = [d for d in dirnames if d not in ignore_dirs and not d.startswith(".")]
         for filename in filenames:
             if truncated:
                 break

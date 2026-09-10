@@ -44,9 +44,28 @@ def test_read_file_reports_truncation(sample_project):
     assert len(result["content"]) == 5
 
 
+
+def test_read_file_continuation_with_next_offset(sample_project):
+    first = fs.read_file(str(sample_project), "player.gd", max_chars=5)
+    second = fs.read_file(
+        str(sample_project), "player.gd", max_chars=5, offset=first["next_offset"]
+    )
+    full_content = (sample_project / "player.gd").read_text()
+
+    assert first["content"] + second["content"] == full_content[:10]
+    assert second["offset"] == first["next_offset"]    
+
+
 def test_read_file_rejects_path_outside_project(sample_project):
     with pytest.raises(ValueError):
         fs.read_file(str(sample_project), "../../etc/passwd")
+
+
+def test_write_file_rejects_path_outside_project(sample_project):
+    with pytest.raises(ValueError):
+        fs.write_file(
+            str(sample_project), "../../etc/passwd", "hacked", write_enabled=True
+        )        
 
 
 def test_write_file_respects_write_enabled(sample_project):
@@ -71,7 +90,44 @@ def test_write_file_creates_new_file_when_enabled(sample_project):
     assert (sample_project / "new_script.gd").exists()
 
 
+
+
+
 def test_estimate_tokens_grows_with_length():
     short = fs.estimate_tokens("hello")
     longer = fs.estimate_tokens("hello " * 100)
     assert longer > short
+    
+
+def test_get_current_datetime_returns_expected_fields():
+    result = fs.get_current_datetime()
+    assert "datetime" in result
+    assert "date" in result
+    assert "time" in result
+    assert "weekday" in result
+    assert result["timezone"] == "локальное время компьютера"
+
+
+def test_get_current_datetime_with_valid_timezone():
+    result = fs.get_current_datetime(timezone="UTC")
+    assert result["timezone"] == "UTC"
+    assert "error" not in result
+
+
+def test_get_current_datetime_with_invalid_timezone_returns_error():
+    result = fs.get_current_datetime(timezone="Not/A_Real_Zone")
+    assert "error" in result
+
+    
+
+def test_search_content_respects_custom_ignore_dirs(tmp_path):
+    (tmp_path / "keep_me").mkdir()
+    (tmp_path / "keep_me" / "code.py").write_text("MAGIC_WORD = 1\n", encoding="utf-8")
+    (tmp_path / "skip_me").mkdir()
+    (tmp_path / "skip_me" / "code.py").write_text("MAGIC_WORD = 2\n", encoding="utf-8")
+
+    result = fs.search_content(str(tmp_path), "MAGIC_WORD", ignore_dirs={"skip_me"})
+
+    files_hit = {m["file"] for m in result["matches"]}
+    assert any("keep_me" in f for f in files_hit)
+    assert not any("skip_me" in f for f in files_hit)
