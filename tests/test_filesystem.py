@@ -1,6 +1,7 @@
 """Базовые тесты языко-агностичных инструментов (Этап 7 roadmap: pytest)."""
 
 import pytest
+import importlib
 
 from tools import filesystem as fs
 
@@ -131,3 +132,20 @@ def test_search_content_respects_custom_ignore_dirs(tmp_path):
     files_hit = {m["file"] for m in result["matches"]}
     assert any("keep_me" in f for f in files_hit)
     assert not any("skip_me" in f for f in files_hit)
+
+    import importlib
+import os as _os
+
+
+def test_extra_ignore_dirs_from_env(monkeypatch):
+    monkeypatch.setenv("EXTRA_IGNORE_DIRS", "my_custom_dir, another_dir")
+
+    importlib.reload(fs)
+
+    try:
+        assert "my_custom_dir" in fs.DEFAULT_IGNORE_DIRS
+        assert "another_dir" in fs.DEFAULT_IGNORE_DIRS
+        assert ".git" in fs.DEFAULT_IGNORE_DIRS
+    finally:
+        monkeypatch.delenv("EXTRA_IGNORE_DIRS", raising=False)
+        importlib.reload(fs)
