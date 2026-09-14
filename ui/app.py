@@ -57,13 +57,19 @@ def _app_dir() -> Path:
     return Path(__file__).parent.parent
 
 
+from logging.handlers import RotatingFileHandler
+
 LOG_PATH = _app_dir() / "isker.log"
-logging.basicConfig(
-    filename=LOG_PATH,
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    encoding="utf-8",
+
+_formatter = logging.Formatter(
+    fmt="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
+_file_handler = RotatingFileHandler(
+    LOG_PATH, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8"
+)
+_file_handler.setFormatter(_formatter)
+
+logging.basicConfig(level=logging.INFO, handlers=[_file_handler])
 logger = logging.getLogger(__name__)
 
 FONT_PATH = _resource_path("assets", "fonts", "Jura-SemiBold.ttf")
@@ -762,11 +768,6 @@ def _enable_dark_title_bar(window):
 
 
 def main():
-    logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    datefmt="%H:%M:%S",
-)
     app = QApplication(sys.argv)
     font_family = load_custom_font()  # только после создания QApplication — иначе краш
     app.setStyleSheet(build_cyberpunk_style(font_family))
