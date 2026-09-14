@@ -96,7 +96,7 @@ def test_multi_file_task_no_rollback_on_crash(tmp_path, monkeypatch):
         memory=FakeMemory(),
     )
 
-    final_text, changed_files = run_task(state, "создай file_a.txt и file_b.txt")
+    final_text, changed_files, task_summary = run_task(state, "создай file_a.txt и file_b.txt")
 
     # file_a должен реально существовать на диске с нужным содержимым.
     file_a = tmp_path / "file_a.txt"

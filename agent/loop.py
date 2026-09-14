@@ -90,6 +90,48 @@ _ERROR_PATTERNS_BY_LANG = {
 }
 
 
+
+_TOOL_DESCRIPTIONS_BY_LANG = {
+    "ru": {
+        "list_tree": "📂 Смотрю структуру проекта...",
+        "search_content": "🔍 Ищу «{pattern}» по проекту...",
+        "read_file": "📖 Читаю файл {path}...",
+        "write_file": "✏️ Записываю файл {path}...",
+        "get_current_datetime": "🕒 Узнаю текущую дату и время...",
+        "read_web_page": "🌐 Загружаю страницу {url}...",
+    },
+    "en": {
+        "list_tree": "📂 Looking at the project structure...",
+        "search_content": "🔍 Searching for \"{pattern}\" in the project...",
+        "read_file": "📖 Reading file {path}...",
+        "write_file": "✏️ Writing file {path}...",
+        "get_current_datetime": "🕒 Getting the current date and time...",
+        "read_web_page": "🌐 Loading page {url}...",
+    },
+    "es": {
+        "list_tree": "📂 Revisando la estructura del proyecto...",
+        "search_content": "🔍 Buscando «{pattern}» en el proyecto...",
+        "read_file": "📖 Leyendo el archivo {path}...",
+        "write_file": "✏️ Escribiendo el archivo {path}...",
+        "get_current_datetime": "🕒 Consultando la fecha y hora actuales...",
+        "read_web_page": "🌐 Cargando la página {url}...",
+    },
+}
+
+
+def _describe_tool_call(tool: str, args: dict, lang: str = "ru") -> str:
+    """Человеко-понятная фраза для live-комментария в UI перед вызовом инструмента.
+    Если инструмент неизвестен или аргумент отсутствует — возвращает нейтральный текст."""
+    templates = _TOOL_DESCRIPTIONS_BY_LANG.get(lang, _TOOL_DESCRIPTIONS_BY_LANG["ru"])
+    template = templates.get(tool)
+    if not template:
+        return tool
+    try:
+        return template.format(**args)
+    except KeyError:
+        return template.split("{")[0].strip()
+
+
 def _match_known_error(text: str, lang: str = "ru") -> str | None:
     """Проверяет, совпадает ли text с одним из известных паттернов ошибок.
     Возвращает готовый переведённый текст, либо None, если совпадений нет."""
@@ -293,7 +335,8 @@ def _trim_context_if_needed(messages: list[dict]) -> list[dict]:
 _LANG_NAMES = {"ru": "русском", "en": "английском (English)", "es": "испанском (español)"}
 
 
-def run_task(state: SessionState, user_task: str) -> tuple[str, list[dict]]:
+def run_task(state: SessionState, user_task: str, on_step=None, cancel_check=None) -> tuple[str, list[dict]]:
+
     """
     Запускает цикл агента для одной задачи пользователя в рамках сессии.
     Возвращает (финальный текстовый ответ, список изменённых файлов).
@@ -318,9 +361,14 @@ def run_task(state: SessionState, user_task: str) -> tuple[str, list[dict]]:
         state.history.append({"role": "assistant", "content": cached_text})
         state.memory.log_turn(state.session_id, "user", user_task)
         state.memory.log_turn(state.session_id, "assistant", cached_text)
-        return cached_text, cached_changed_files
+        return cached_text, cached_changed_files, None
 
     changed_files: list[dict] = []
+    # Пункт 5.2: короткий журнал шагов ЭТОЙ задачи (не всей сессии) — нужен
+    # только для последующего резюме через summarize_task(). Хранит краткую,
+    # обрезанную версию результата каждого инструмента, а не полный текст —
+    # чтобы доп. вызов LLM на резюме был дешёвым.
+    task_log: list[dict] = []
 
     facts = state.memory.get_all_facts(_project_id(state.project_root)) if state.project_root else {}
     project_memory_text = "\n".join(f"- {k}: {v}" for k, v in facts.items()) or "(пока пусто, это первая сессия)"
@@ -383,6 +431,12 @@ def run_task(state: SessionState, user_task: str) -> tuple[str, list[dict]]:
     failed_parse_count = 0
     try:
         for step in range(MAX_STEPS):
+            if cancel_check and cancel_check():
+                cancel_text = "Задача отменена пользователем."
+                if changed_files:
+                    files_list = "\n".join(f"- {f['path']} ({f['status']})" for f in changed_files)
+                    cancel_text += f"\n\nУспешно применены следующие файлы (откат не выполнялся):\n{files_list}"
+                return cancel_text, changed_files, None
             # Простой шаг (решить, что делать дальше) идёт на "fast" модель;
             # если пользователь явно просит крупный рефакторинг/генерацию — "strong".
             tier = "strong" if any(k in user_task.lower() for k in ("рефактор", "перепиши", "архитектур")) else "fast"
@@ -399,7 +453,7 @@ def run_task(state: SessionState, user_task: str) -> tuple[str, list[dict]]:
                 failed_parse_count += 1
                 if failed_parse_count >= 3:
                     error_text = "Модель вернула некорректный ответ несколько раз подряд, попробуйте переформулировать задачу или сменить модель"
-                    return error_text, changed_files
+                    return error_text, changed_files, None
                 # Модель не выдержала формат — просим её исправиться, не падаем сразу.
                 messages.append({"role": "assistant", "content": response.text})
                 messages.append({
@@ -418,11 +472,15 @@ def run_task(state: SessionState, user_task: str) -> tuple[str, list[dict]]:
                 state.memory.log_turn(state.session_id, "user", user_task)
                 state.memory.log_turn(state.session_id, "assistant", final_text)
                 state.task_cache[cache_key] = (final_text, changed_files)
-                return final_text, changed_files
+                task_summary = summarize_task(state, user_task, task_log, final_text) if task_log else None
+                return final_text, changed_files, task_summary
 
             if decision.get("action") == "tool":
                 tool_name = decision.get("tool")
                 args = decision.get("args", {})
+                if on_step:
+                    on_step(f"[{step + 1}/{MAX_STEPS}] " + _describe_tool_call(tool_name, args, state.lang))
+                    
                 try:
                     tool_result = _execute_tool(state, tool_name, args)
                 except Exception as e:
@@ -438,7 +496,7 @@ def run_task(state: SessionState, user_task: str) -> tuple[str, list[dict]]:
                         state.memory.log_turn(state.session_id, "user", user_task)
                         state.memory.log_turn(state.session_id, "assistant", known_friendly)
                         state.task_cache[cache_key] = (known_friendly, changed_files)
-                        return known_friendly, changed_files
+                        return known_friendly, changed_files, None
                     # Незнакомая ошибка — отдаём модели, пусть сформулирует сама.
                     tool_result = {"error": error_str}
 
@@ -493,6 +551,12 @@ def run_task(state: SessionState, user_task: str) -> tuple[str, list[dict]]:
                     )
                     changed_files.append({"path": r["path"], "status": status})
 
+                task_log.append({
+                    "tool": tool_name,
+                    "args": args,
+                    "result": json.dumps(tool_result, ensure_ascii=False)[:800],
+                })
+
                 messages.append({
                     "role": "user",
                     "content": f"Результат инструмента {tool_name}: {json.dumps(tool_result, ensure_ascii=False)[:30000]}",
@@ -516,9 +580,43 @@ def run_task(state: SessionState, user_task: str) -> tuple[str, list[dict]]:
             )
         else:
             error_text = f"Задача прервана из-за ошибки, ни один файл не был изменён: {error_str}"
-        return error_text, changed_files
+        return error_text, changed_files, None
 
-    return "Достигнут лимит шагов (защита от зацикливания). Задача не завершена — попробуй сузить запрос.", changed_files
+    return "Достигнут лимит шагов (защита от зацикливания). Задача не завершена — попробуй сузить запрос.", changed_files, None
+
+def summarize_task(state: SessionState, user_task: str, task_log: list[dict], final_text: str) -> str:
+    """
+    Пункт 5.2 плана. Доп. вызов LLM (tier="fast"), обобщающий шаги ОДНОЙ
+    конкретной задачи в связный текст для пользователя — что искал, что
+    нашёл, что изменил, в каком порядке. Аналог update_project_summary, но
+    для одной задачи, а не для всей сессии.
+
+    Вызывать только когда task_log не пуст (в задаче реально были шаги) —
+    вызывающий код (run_task) уже это проверяет перед вызовом. Если сама
+    генерация не удалась (сбой провайдера) — возвращает "" вместо ошибки,
+    чтобы не портить уже готовый основной ответ пользователю.
+    """
+    steps_text = "\n".join(
+        f"- Инструмент {s['tool']} с аргументами {s['args']}: {s['result']}"
+        for s in task_log
+    )
+    lang_name = _LANG_NAMES.get(state.lang, _LANG_NAMES["ru"])
+    prompt = (
+        f"Пользователь попросил: {user_task}\n\n"
+        f"Агент выполнил следующие шаги:\n{steps_text}\n\n"
+        f"Финальный ответ агента пользователю: {final_text}\n\n"
+        "Напиши развёрнутое резюме хода выполнения ЭТОЙ конкретной задачи для "
+        "пользователя: что искал, что нашёл, что изменил и в каком порядке. "
+        f"3-6 предложений, обычный текст, без JSON. Отвечай СТРОГО на "
+        f"{lang_name} языке, независимо от языка шагов выше."
+    )
+    try:
+        response = call_llm([{"role": "user", "content": prompt}], tier="fast")
+        return response.text
+    except Exception as e:
+        logger.warning("Не удалось сгенерировать резюме задачи (сессия %s): %s", state.session_id, e)
+        return ""
+
 
 def update_project_summary(state: SessionState) -> str:
     """

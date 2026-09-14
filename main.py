@@ -89,7 +89,7 @@ def main():
             continue
 
         try:
-            answer, changed_files = run_task(state, task)
+                answer, changed_files, task_summary = run_task(state, task)
         except Exception as e:
             import traceback
             traceback.print_exc()

@@ -63,7 +63,8 @@ MODELS = {
 }
 
 REQUEST_TIMEOUT = 30  # секунд
-MAX_RETRIES_PER_PROVIDER = 1  # без задержанных ретраев здесь — это Этап 6
+MAX_RETRIES_PER_PROVIDER = 1
+CHAIN_RETRY_DELAYS = [5, 15]  # секунды ожидания, если отказали ВСЕ провайдеры разом (Этап 6)
 
 
 def _call_openai_compatible(base_url: str, api_key: str, model: str, messages: list[dict]) -> str:
@@ -148,14 +149,8 @@ _PROVIDER_CHAINS = {
 }
 
 
-def call_llm(messages: list[dict], tier: str = "fast") -> LLMResponse:
-    """
-    Отправляет запрос по цепочке провайдеров, начиная с Groq.
-    Переключается на следующего при 429 / таймауте / любой ошибке провайдера.
-
-    messages: список {"role": "system"|"user"|"assistant", "content": str}
-    tier: "fast" или "strong" — выбирает модель под сложность шага.
-    """
+def _try_chain_once(messages: list[dict], tier: str) -> LLMResponse | None:
+    """Один проход по всей цепочке провайдеров. None, если все отказали."""
     last_error: Exception | None = None
     chain = _PROVIDER_CHAINS.get(tier, _PROVIDER_CHAINS["fast"])
 
@@ -182,4 +177,29 @@ def call_llm(messages: list[dict], tier: str = "fast") -> LLMResponse:
                 time.sleep(0.5)
                 continue
 
-    raise ProviderError(f"Все провайдеры отказали. Последняя ошибка: {last_error}")
+    _try_chain_once.last_error = last_error
+    return None
+
+
+def call_llm(messages: list[dict], tier: str = "fast") -> LLMResponse:
+    """
+    Отправляет запрос по цепочке провайдеров, начиная с Groq.
+    Переключается на следующего при 429 / таймауте / любой ошибке провайдера.
+    Если ВСЯ цепочка отказала — ждёт и пробует всю цепочку заново
+    (см. CHAIN_RETRY_DELAYS), прежде чем окончательно сдаться.
+
+    messages: список {"role": "system"|"user"|"assistant", "content": str}
+    tier: "fast" или "strong" — выбирает модель под сложность шага.
+    """
+    result = _try_chain_once(messages, tier)
+    if result is not None:
+        return result
+
+    for delay in CHAIN_RETRY_DELAYS:
+        logger.warning("Вся цепочка провайдеров отказала, жду %s сек перед повтором", delay)
+        time.sleep(delay)
+        result = _try_chain_once(messages, tier)
+        if result is not None:
+            return result
+
+    raise ProviderError(f"Все провайдеры отказали. Последняя ошибка: {_try_chain_once.last_error}")

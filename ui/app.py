@@ -32,7 +32,32 @@ from PySide6.QtGui import QPainter, QColor, QPen, QPalette, QFont, QFontDatabase
 
 from agent.loop import SessionState, run_task, update_project_summary
 
-LOG_PATH = Path(__file__).parent.parent / "isker.log"
+
+def _resource_path(*parts) -> Path:
+    """
+    Путь к встроенному ресурсу (шрифт, иконка) — работает одинаково что при
+    запуске из исходников (python -m ui.app), что из собранного .exe
+    (PyInstaller распаковывает ресурсы во временную папку sys._MEIPASS).
+    """
+    if getattr(sys, "frozen", False):
+        base_path = Path(sys._MEIPASS)
+    else:
+        base_path = Path(__file__).parent.parent
+    return base_path.joinpath(*parts)
+
+
+def _app_dir() -> Path:
+    """
+    Папка, где реально лежит запущенный .exe (или папка проекта при запуске
+    из исходников) — сюда пишем лог-файл, рядом с приложением, а не во
+    временную папку распаковки, которая удаляется после закрытия программы.
+    """
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).parent
+    return Path(__file__).parent.parent
+
+
+LOG_PATH = _app_dir() / "isker.log"
 logging.basicConfig(
     filename=LOG_PATH,
     level=logging.INFO,
@@ -41,7 +66,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-FONT_PATH = Path(__file__).parent.parent / "assets" / "fonts" / "Jura-SemiBold.ttf"
+FONT_PATH = _resource_path("assets", "fonts", "Jura-SemiBold.ttf")
 
 
 def load_custom_font() -> str:
@@ -321,18 +346,27 @@ class MatrixRainWidget(QWidget):
 from PySide6.QtCore import QThread, Signal
 
 class AgentTaskWorker(QThread):
-    finished = Signal(str, list)  # answer, changed_files
+    finished = Signal(str, list, str)  # answer, changed_files, task_summary
     error = Signal(str)           # error message
+    step = Signal(str)            # live-комментарий по ходу выполнения
 
     def __init__(self, state, task):
         super().__init__()
         self.state = state
         self.task = task
+        self._cancelled = False
+
+    def request_cancel(self):
+        self._cancelled = True
 
     def run(self):
         try:
-            answer, changed_files = run_task(self.state, self.task)
-            self.finished.emit(answer, changed_files)
+            answer, changed_files, task_summary = run_task(
+                self.state, self.task,
+                on_step=self.step.emit,
+                cancel_check=lambda: self._cancelled,
+            )
+            self.finished.emit(answer, changed_files, task_summary or "")
         except Exception as e:
             self.error.emit(str(e))
 
@@ -374,6 +408,7 @@ TRANSLATIONS = {
         "es": "Introduce una tarea para ISKER...",
     },
     "send_button": {"ru": "Отправить", "en": "Send", "es": "Enviar"},
+    "cancel_button": {"ru": "Отмена", "en": "Cancel", "es": "Cancelar"},
     "session_started_no_project": {
         "ru": "сессия начата без проекта — доступны только общие вопросы, без работы с файлами.",
         "en": "session started without a project — only general questions are available, no file access.",
@@ -403,9 +438,9 @@ TRANSLATIONS = {
     },
     "you_label": {"ru": "Ты", "en": "You", "es": "Tú"},
     "error_label": {"ru": "ошибка", "en": "error", "es": "error"},
-    "thinking_label": {"ru": "думает...", "en": "thinking...", "es": "pensando..."},
+        "thinking_label": {"ru": "думает...", "en": "thinking...", "es": "pensando..."},
+    "task_summary_label": {"ru": "Резюме задачи:", "en": "Task summary:", "es": "Resumen de la tarea:"},
 }
-
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -508,6 +543,13 @@ class MainWindow(QMainWindow):
         self.send_button.clicked.connect(self.send_task)
         input_layout.addWidget(self.send_button)
 
+        
+        self.cancel_button = QPushButton()
+        self.cancel_button.setObjectName("cancelButton")
+        self.cancel_button.setEnabled(False)
+        self.cancel_button.clicked.connect(self.cancel_task)
+        input_layout.addWidget(self.cancel_button)
+
         main_layout.addLayout(input_layout)
 
         self.apply_translations()
@@ -523,6 +565,7 @@ class MainWindow(QMainWindow):
         self.new_session_button.setText(self.t("new_session_button"))
         self.chat_history.setPlaceholderText(self.t("history_placeholder"))
         self.send_button.setText(self.t("send_button"))
+        self.cancel_button.setText(self.t("cancel_button"))
         if self.state is not None:
             self.session_status_label.setText(self.t("session_status_active"))
             self.session_status_label.setStyleSheet("color: #39ff88;")
@@ -612,6 +655,8 @@ class MainWindow(QMainWindow):
         if not task or self.state is None:   
             return
 
+        self._thinking_removed = False
+
         you_label = self.t("you_label")
         self.chat_history.append(f"\n> {you_label}: {task}")
         self.task_input.clear()
@@ -624,14 +669,35 @@ class MainWindow(QMainWindow):
         )
         self.chat_history.append(thinking_html)
 
-        # Запускаем агента в фоновом потоке, чтобы матричная анимация не зависала
+# Запускаем агента в фоновом потоке, чтобы матричная анимация не зависала
         self.worker = AgentTaskWorker(self.state, task)
         self.worker.finished.connect(self._on_task_finished)
         self.worker.error.connect(self._on_task_error)
+        self.worker.step.connect(self._on_task_step)
+        self.cancel_button.setEnabled(True)
         self.worker.start()
 
-    def _on_task_finished(self, answer, changed_files):
-        self._remove_last_line()
+    def cancel_task(self):
+        if hasattr(self, "worker") and self.worker.isRunning():
+            self.worker.request_cancel()
+            self.cancel_button.setEnabled(False)
+
+    def _on_task_step(self, message):
+        # Первый live-комментарий заменяет собой надпись "ISKER думает..."
+        if not self._thinking_removed:
+            self._remove_last_line()
+            self._thinking_removed = True
+        step_html = (
+            '<span style="color:#888888;">'
+            f'&gt;&gt; {html.escape(message)}</span>'
+        )
+        self.chat_history.append(step_html)
+
+
+    def _on_task_finished(self, answer, changed_files, task_summary):
+        self.cancel_button.setEnabled(False)
+        if not self._thinking_removed:
+            self._remove_last_line()
         self.chat_history.append(f">> ISKER: {answer}")
         if changed_files:
             lines_html = "<br>".join(
@@ -647,13 +713,25 @@ class MainWindow(QMainWindow):
                 f'✏️ Изменённые файлы:<br>{lines_html}</span>'
                 '</td></tr></table>'
             )
+        if task_summary:
+            self.chat_history.append(
+                '<table cellpadding="10" cellspacing="0" style="'
+                'border: 1px solid #00fff9; border-radius: 6px; '
+                'background-color: rgba(8, 16, 20, 180); margin-top: 4px;">'
+                '<tr><td>'
+                f'<span style="color:#00fff9; font-family:\'{self.font_family}\'; font-size:14px;">'
+                f'📋 {self.t("task_summary_label")} {html.escape(task_summary)}</span>'
+                '</td></tr></table>'
+            )        
         self.task_input.setEnabled(True)
         self.send_button.setEnabled(True)
         self.task_input.setFocus()
 
     def _on_task_error(self, err_msg):
-        self._remove_last_line()
+        if not self._thinking_removed:
+            self._remove_last_line()
         error_label = self.t("error_label")
+        self.cancel_button.setEnabled(False)
         self.chat_history.append(f">> ISKER [{error_label}]: {err_msg}")
         self.task_input.setEnabled(True)
         self.send_button.setEnabled(True)
@@ -692,7 +770,7 @@ def main():
     app = QApplication(sys.argv)
     font_family = load_custom_font()  # только после создания QApplication — иначе краш
     app.setStyleSheet(build_cyberpunk_style(font_family))
-    icon_path = Path(__file__).parent.parent / "assets" / "icon.png"
+    icon_path = _resource_path("assets", "icon.png")
     app.setWindowIcon(QIcon(str(icon_path)))
     window = MainWindow()
     window.font_family = font_family

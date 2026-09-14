@@ -9,3 +9,7 @@ venv/
 
 *.log
 *.db
+
+dist/
+build/
+*.spec

@@ -218,7 +218,7 @@ def test_trim_context_compresses_when_above_threshold(fake_fs, fake_call_llm):
 def test_run_task_cache_hit_skips_llm(state, fake_call_llm):
     state.task_cache["привет"] = ("Ответ из кэша", [{"path": "a.py", "status": "изменён"}])
 
-    text, changed = loop.run_task(state, "  Привет!!!  ")
+    text, changed, _ = loop.run_task(state, "  Привет!!!  ")
 
     assert text == "Ответ из кэша"
     assert changed == [{"path": "a.py", "status": "изменён"}]
@@ -234,7 +234,7 @@ def test_run_task_cache_hit_skips_llm(state, fake_call_llm):
 def test_run_task_simple_final_response(state, fake_call_llm):
     fake_call_llm.return_value = _final("Готово!")
 
-    text, changed = loop.run_task(state, "Что делать?")
+    text, changed, _ = loop.run_task(state, "Что делать?")
 
     assert text == "Готово!"
     assert changed == []
@@ -246,7 +246,7 @@ def test_run_task_simple_final_response(state, fake_call_llm):
 def test_run_task_friendlifies_error_in_final_content(state, fake_call_llm):
     fake_call_llm.return_value = _final("Ошибка: rate limit exceeded")
 
-    text, _ = loop.run_task(state, "задача")
+    text, _, _ = loop.run_task(state, "задача")
 
     assert text == (
         "Сейчас все провайдеры ИИ перегружены или недоступны. "
@@ -265,10 +265,10 @@ def test_run_task_tool_call_then_final(state, fake_call_llm, fake_fs):
         _final("Дерево получено"),
     ]
 
-    text, _ = loop.run_task(state, "покажи файлы")
+    text, _, _ = loop.run_task(state, "покажи файлы")
 
     assert text == "Дерево получено"
-    assert fake_call_llm.call_count == 2
+    assert fake_call_llm.call_count == 3
     fake_fs.list_tree.assert_called_once_with("/project")
     second_messages = fake_call_llm.call_args_list[1][0][0]
     assert any(
@@ -286,7 +286,7 @@ def test_run_task_write_file_records_created_status(state, fake_call_llm, fake_f
         _final("Файл создан"),
     ]
 
-    _, changed = loop.run_task(state, "создай файл")
+    _, changed, _ = loop.run_task(state, "создай файл")
 
     assert changed == [{"path": "new.py", "status": "создан, 5 строк"}]
 
@@ -300,7 +300,7 @@ def test_run_task_write_file_records_edited_status(state, fake_call_llm, fake_fs
         _final("Файл изменён"),
     ]
 
-    _, changed = loop.run_task(state, "измени файл")
+    _, changed, _ = loop.run_task(state, "измени файл")
 
     assert changed == [{"path": "a.py", "status": "изменён, было 3 строки, стало 10"}]
 
@@ -312,7 +312,7 @@ def test_run_task_tool_exception_is_reported_and_loop_continues(state, fake_call
         _final("Ошибка обработана"),
     ]
 
-    text, _ = loop.run_task(state, "покажи файлы")
+    text, _, _ = loop.run_task(state, "покажи файлы")
 
     assert text == "Ошибка обработана"
     second_messages = fake_call_llm.call_args_list[1][0][0]
@@ -330,7 +330,7 @@ def test_run_task_known_tool_error_short_circuits_to_friendly_message(state, fak
     fake_fs.read_file.side_effect = FileNotFoundError("Файл не найден: test.txt")
     fake_call_llm.return_value = _tool("read_file", {"path": "test.txt"})
 
-    text, changed = loop.run_task(state, "read the file test.txt")
+    text, changed, _ = loop.run_task(state, "read the file test.txt")
 
     assert text == (
         "The specified file was not found in the project. "
@@ -355,7 +355,7 @@ def test_run_task_read_file_auto_continuation_combines_parts(state, fake_call_ll
         _final("Прочитано"),
     ]
 
-    text, _ = loop.run_task(state, "прочитай big.py")
+    text, _, _ = loop.run_task(state, "прочитай big.py")
 
     assert text == "Прочитано"
     assert fake_fs.read_file.call_count == 2
@@ -388,7 +388,7 @@ def test_run_task_read_file_auto_continuation_hits_repeat_limit(state, fake_call
         _final("Готово, частично"),
     ]
 
-    text, _ = loop.run_task(state, "прочитай huge.py")
+    text, _, _ = loop.run_task(state, "прочитай huge.py")
 
     assert text == "Готово, частично"
     assert fake_fs.read_file.call_count == 20  # 1 первичный + 19 в цикле дочитывания
@@ -411,7 +411,7 @@ def test_run_task_invalid_json_retries_then_recovers(state, fake_call_llm):
         _final("Наконец получилось"),
     ]
 
-    text, _ = loop.run_task(state, "задача")
+    text, _, _ = loop.run_task(state, "задача")
 
     assert text == "Наконец получилось"
     assert fake_call_llm.call_count == 3
@@ -422,7 +422,7 @@ def test_run_task_invalid_json_three_times_gives_up(state, fake_call_llm):
         LLMResponse(text="bad", provider="p", model="m") for _ in range(3)
     ]
 
-    text, changed = loop.run_task(state, "задача")
+    text, changed, _ = loop.run_task(state, "задача")
 
     assert "некорректный ответ" in text.lower()
     assert changed == []
@@ -435,7 +435,7 @@ def test_run_task_unknown_action_prompts_model_to_fix(state, fake_call_llm):
         _final("ок теперь верно"),
     ]
 
-    text, _ = loop.run_task(state, "задача")
+    text, _, _ = loop.run_task(state, "задача")
 
     assert text == "ок теперь верно"
     second_messages = fake_call_llm.call_args_list[1][0][0]
@@ -495,7 +495,7 @@ def test_run_task_max_steps_reached(state, fake_call_llm, fake_fs):
     fake_fs.get_current_datetime.return_value = {"iso": "2026-09-09"}
     fake_call_llm.return_value = _tool("get_current_datetime", {})
 
-    text, changed = loop.run_task(state, "который час")
+    text, changed, _ = loop.run_task(state, "который час")
 
     assert "лимит шагов" in text.lower()
     assert changed == []
@@ -516,7 +516,7 @@ def test_run_task_unexpected_exception_with_changed_files(state, fake_call_llm, 
 
     fake_call_llm.side_effect = side_effect
 
-    text, changed = loop.run_task(state, "создай файл")
+    text, changed, _ = loop.run_task(state, "создай файл")
 
     assert "Задача прервана из-за ошибки" in text
     assert "a.py" in text
@@ -527,7 +527,7 @@ def test_run_task_unexpected_exception_with_changed_files(state, fake_call_llm, 
 def test_run_task_unexpected_exception_without_changed_files(state, fake_call_llm):
     fake_call_llm.side_effect = RuntimeError("что-то сломалось")
 
-    text, changed = loop.run_task(state, "задача")
+    text, changed, _ = loop.run_task(state, "задача")
 
     assert "ни один файл не был изменён" in text
     assert changed == []
