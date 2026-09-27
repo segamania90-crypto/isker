@@ -12,6 +12,7 @@ import fnmatch
 import os
 import re
 import time
+import shutil
 from datetime import datetime
 from pathlib import Path     
 
@@ -289,3 +290,39 @@ def write_file(root: str, relative_path: str, content: str, write_enabled: bool 
         "lines_before": old_content.count("\n") + 1 if existed else 0,
         "lines_after": content.count("\n") + 1,
     }
+
+
+import shutil
+
+def move_file(root: str, source_path: str, destination_path: str, write_enabled: bool = False) -> dict:
+    if not write_enabled:
+        raise PermissionError("Запись в файлы проекта не разрешена в этой сессии")
+    
+    full_source = (Path(root) / source_path).resolve()
+    full_dest = (Path(root) / destination_path).resolve()
+    
+    if not str(full_source).startswith(str(Path(root).resolve())):
+        raise ValueError("Исходный путь выходит за пределы разрешённого проекта")
+    if not str(full_dest).startswith(str(Path(root).resolve())):
+        raise ValueError("Путь назначения выходит за пределы разрешённого проекта")
+    if not full_source.exists():
+        raise FileNotFoundError(f"Файл не найден: {source_path}")
+    
+    full_dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(full_source), str(full_dest))
+    
+    return {"source": source_path, "destination": destination_path, "moved": True}
+
+
+def delete_file(root: str, relative_path: str, write_enabled: bool = False) -> dict:
+    if not write_enabled:
+        raise PermissionError("Запись в файлы проекта не разрешена в этой сессии")
+    
+    full_path = (Path(root) / relative_path).resolve()
+    if not str(full_path).startswith(str(Path(root).resolve())):
+        raise ValueError("Путь выходит за пределы разрешённого проекта")
+    if not full_path.exists():
+        raise FileNotFoundError(f"Файл не найден: {relative_path}")
+    
+    full_path.unlink()
+    return {"path": relative_path, "deleted": True}
