@@ -140,7 +140,7 @@ def search_content(
     """
     root_path = Path(root).resolve()
     matches: list[dict] = []
-    compiled = re.compile(pattern) if regex else None) if regex else None
+    compiled = re.compile(pattern) if regex else None
     ignore_dirs = ignore_dirs or DEFAULT_IGNORE_DIRS
 
     start_time = time.time()
