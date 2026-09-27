@@ -12,7 +12,6 @@ import fnmatch
 import os
 import re
 import time
-import shutil
 from datetime import datetime
 from pathlib import Path     
 
@@ -141,7 +140,7 @@ def search_content(
     """
     root_path = Path(root).resolve()
     matches: list[dict] = []
-    compiled = re.compile(pattern) if regex else None
+    compiled = re.compile(pattern) if regex else None) if regex else None
     ignore_dirs = ignore_dirs or DEFAULT_IGNORE_DIRS
 
     start_time = time.time()
@@ -227,6 +226,7 @@ def read_file(root: str, relative_path: str, max_chars: int = 20000, offset: int
         "next_offset": offset + max_chars if truncated else None,
         "estimated_tokens": estimate_tokens(content),
     }
+
 
 def _resolve_existing_sibling(root: str, relative_path: str) -> str:
     """
