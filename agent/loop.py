@@ -61,6 +61,10 @@ _ERROR_PATTERNS_RU = {
     "файл не найден": "Указанный файл не найден в проекте. Проверьте путь и повторите запрос.",
     "путь выходит за пределы": "Запрошенный файл находится за пределами разрешённой папки проекта.",
     "запись в файлы проекта не разрешена": "Запись в файлы не разрешена в этой сессии. Включите разрешение на запись при старте сессии.",
+    "папка не найдена": "Указанная папка не найдена в проекте. Проверьте путь и повторите запрос.",
+    "это файл, а не папка": "По этому пути находится файл, а не папка. Для удаления файла используйте обычное удаление файла.",
+    "нельзя удалить корневую папку проекта": "Нельзя удалить корневую папку проекта целиком — это защита от случайного уничтожения всего проекта.",
+    "уже существует файл (не папка)": "По этому пути уже есть файл с таким именем — нельзя создать папку с тем же именем.",
 }
 
 _ERROR_PATTERNS_EN = {
@@ -71,6 +75,10 @@ _ERROR_PATTERNS_EN = {
     "файл не найден": "The specified file was not found in the project. Check the path and try again.",
     "путь выходит за пределы": "The requested file is outside the allowed project folder.",
     "запись в файлы проекта не разрешена": "Writing to files is not allowed in this session. Enable write access at session start.",
+    "папка не найдена": "The specified folder was not found in the project. Check the path and try again.",
+    "это файл, а не папка": "That path points to a file, not a folder. Use regular file deletion for a single file.",
+    "нельзя удалить корневую папку проекта": "You can't delete the project's root folder entirely — this protects against wiping out the whole project by accident.",
+    "уже существует файл (не папка)": "A file with that name already exists at this path — can't create a folder with the same name.",
 }
 
 _ERROR_PATTERNS_ES = {
@@ -81,6 +89,10 @@ _ERROR_PATTERNS_ES = {
     "файл не найден": "No se encontró el archivo indicado en el proyecto. Comprueba la ruta e inténtalo de nuevo.",
     "путь выходит за пределы": "El archivo solicitado está fuera de la carpeta del proyecto permitida.",
     "запись в файлы проекта не разрешена": "No se permite escribir archivos en esta sesión. Habilita el permiso de escritura al iniciar la sesión.",
+    "папка не найдена": "No se encontró la carpeta indicada en el proyecto. Comprueba la ruta e inténtalo de nuevo.",
+    "это файл, а не папка": "Esa ruta apunta a un archivo, no a una carpeta. Usa la eliminación normal de archivos para un solo archivo.",
+    "нельзя удалить корневую папку проекта": "No se puede eliminar la carpeta raíz del proyecto por completo — es una protección contra el borrado accidental de todo el proyecto.",
+    "уже существует файл (не папка)": "Ya existe un archivo con ese nombre en esa ruta — no se puede crear una carpeta con el mismo nombre.",
 }
 
 _ERROR_PATTERNS_BY_LANG = {
@@ -97,6 +109,10 @@ _TOOL_DESCRIPTIONS_BY_LANG = {
         "search_content": "🔍 Ищу «{pattern}» по проекту...",
         "read_file": "📖 Читаю файл {path}...",
         "write_file": "✏️ Записываю файл {path}...",
+        "create_folder": "📁 Создаю папку {relative_path}...",
+        "move_file": "📦 Перемещаю {source_path} → {destination_path}...",
+        "delete_file": "🗑️ Удаляю файл {relative_path}...",
+        "delete_folder": "🗑️ Удаляю папку {relative_path} со всем содержимым...",
         "get_current_datetime": "🕒 Узнаю текущую дату и время...",
         "read_web_page": "🌐 Загружаю страницу {url}...",
     },
@@ -105,6 +121,10 @@ _TOOL_DESCRIPTIONS_BY_LANG = {
         "search_content": "🔍 Searching for \"{pattern}\" in the project...",
         "read_file": "📖 Reading file {path}...",
         "write_file": "✏️ Writing file {path}...",
+        "create_folder": "📁 Creating folder {relative_path}...",
+        "move_file": "📦 Moving {source_path} → {destination_path}...",
+        "delete_file": "🗑️ Deleting file {relative_path}...",
+        "delete_folder": "🗑️ Deleting folder {relative_path} and its contents...",
         "get_current_datetime": "🕒 Getting the current date and time...",
         "read_web_page": "🌐 Loading page {url}...",
     },
@@ -113,6 +133,10 @@ _TOOL_DESCRIPTIONS_BY_LANG = {
         "search_content": "🔍 Buscando «{pattern}» en el proyecto...",
         "read_file": "📖 Leyendo el archivo {path}...",
         "write_file": "✏️ Escribiendo el archivo {path}...",
+        "create_folder": "📁 Creando la carpeta {relative_path}...",
+        "move_file": "📦 Moviendo {source_path} → {destination_path}...",
+        "delete_file": "🗑️ Eliminando el archivo {relative_path}...",
+        "delete_folder": "🗑️ Eliminando la carpeta {relative_path} y su contenido...",
         "get_current_datetime": "🕒 Consultando la fecha y hora actuales...",
         "read_web_page": "🌐 Cargando la página {url}...",
     },
@@ -168,8 +192,8 @@ SYSTEM_PROMPT_TEMPLATE = """Ты — AI-агент, ускоряющий рут�
 
 КРИТИЧЕСКИ ВАЖНО — ЧЕСТНОСТЬ О СВОИХ ВОЗМОЖНОСТЯХ: у тебя есть ТОЛЬКО те
 инструменты, что перечислены ниже в разделе про инструменты. Если пользователь
-просит сделать что-то, для чего инструмента НЕТ (например, удалить файл,
-переименовать файл, выполнить код, установить пакет, сделать git commit) —
+просит сделать что-то, для чего инструмента НЕТ (например, выполнить код,
+установить пакет, сделать git commit, работать с git вообще) —
 НИКОГДА не притворяйся, что выполнил это, и не выдумывай результат (ни
 "успешно удалено", ни "файл не найден", если ты это не проверял). Вместо
 этого через action="final" честно скажи пользователю, что у тебя нет
@@ -282,12 +306,20 @@ def _execute_tool(state: SessionState, tool: str, args: dict) -> dict:
         return {"result": fs.write_file(
             state.project_root, target_path, args["content"], write_enabled=state.write_enabled
         )}
+    if tool == "create_folder":
+        return {"result": fs.create_folder(
+            state.project_root, args["relative_path"], write_enabled=state.write_enabled
+        )}
     if tool == "move_file":
         return {"result": fs.move_file(
             state.project_root, args["source_path"], args["destination_path"], write_enabled=state.write_enabled
         )}
     if tool == "delete_file":
         return {"result": fs.delete_file(
+            state.project_root, args["relative_path"], write_enabled=state.write_enabled
+        )}
+    if tool == "delete_folder":
+        return {"result": fs.delete_folder(
             state.project_root, args["relative_path"], write_enabled=state.write_enabled
         )}
     raise ValueError(f"Неизвестный инструмент: {tool}")
@@ -390,12 +422,34 @@ def run_task(state: SessionState, user_task: str, on_step=None, cancel_check=Non
             "\"truncated\": true — файл не поместился целиком; вызови read_file снова с тем же "
             "path и offset, равным полученному \"next_offset\", чтобы прочитать следующую часть. "
             "Повторяй, пока \"truncated\" не станет false, чтобы увидеть файл целиком.\n"
-            "- write_file(path, content) -> записать файл (доступно только если запись разрешена в этой сессии)\n"
+            "- write_file(path, content) -> записать файл (доступно только если запись разрешена в этой сессии). "
+            "Если промежуточных папок по пути path ещё не существует, они создаются автоматически — "
+            "можно сразу записать файл по вложенному пути вроде \"new_folder/sub/file.txt\" одним "
+            "вызовом, без отдельного создания папок.\n"
+            "- create_folder(relative_path) -> создать ПУСТУЮ папку (и промежуточные папки по пути), "
+            "ничего не перемещая и не создавая никаких файлов внутри. Используй именно этот инструмент, "
+            "если пользователь просит просто “создай папку X” / “сделай новую папку”, "
+            "без упоминания какого-либо файла, который нужно туда положить. "
+            "(доступно только если запись разрешена в этой сессии)\n"
             "- move_file(source_path, destination_path) -> переместить или переименовать файл внутри проекта. "
+            "Если папок по пути destination_path ещё не существует, они создаются автоматически — поэтому "
+            "если пользователь просит “открой новую папку X и перемести туда файл Y” (явно называя "
+            "и папку, и файл), это делается ОДНИМ вызовом move_file(source_path=“Y”, "
+            "destination_path=“X/Y”). "
+            "КРИТИЧЕСКИ ВАЖНО: никогда не вызывай move_file по собственной инициативе, чтобы “как-то” "
+            "создать папку, если пользователь НЕ назвал явно, какой файл нужно переместить. Если он просит "
+            "только создать папку — используй create_folder, а не move_file с каким-то произвольно "
+            "выбранным файлом (например, последним упомянутым в разговоре) — это самовольное действие, "
+            "которое пользователь не запрашивал, и оно недопустимо. "
             "source_path — относительный путь исходного файла, destination_path — относительный путь назначения. "
             "(доступно только если запись разрешена в этой сессии)\n"
-            "- delete_file(relative_path) -> удалить файл внутри проекта. "
+            "- delete_file(relative_path) -> удалить ОДИН файл внутри проекта. Работает только с файлами. "
             "relative_path — относительный путь удаляемого файла. "
+            "(доступно только если запись разрешена в этой сессии)\n"
+            "- delete_folder(relative_path) -> удалить ПАПКУ целиком вместе со всем её содержимым "
+            "(вложенные файлы и подпапки удаляются рекурсивно, без возможности восстановления). "
+            "relative_path — относительный путь удаляемой папки. Нельзя удалить корень проекта. "
+            "Используй именно этот инструмент, если пользователь просит удалить папку, а не delete_file. "
             "(доступно только если запись разрешена в этой сессии)\n"
             "- get_current_datetime(timezone=null) -> реальные текущие дата и время. "
             "Без timezone — время компьютера пользователя. С timezone (IANA-формат, например "
@@ -413,7 +467,7 @@ def run_task(state: SessionState, user_task: str, on_step=None, cancel_check=Non
     else:
         tools_section = (
             "Проект сейчас НЕ открыт. Инструменты работы с файлами (list_tree, search_content, "
-            "read_file, write_file, move_file, delete_file) недоступны — не пытайся их вызывать, для вопросов о коде "
+            "read_file, write_file, create_folder, move_file, delete_file, delete_folder) недоступны — не пытайся их вызывать, для вопросов о коде "
             "проекта сразу отвечай action=\"final\" текстом.\n\n"
             "Однако тебе доступен инструмент get_current_datetime(timezone=null) -> реальные "
             "текущие дата и время. Без timezone — время компьютера пользователя. С timezone "
@@ -591,41 +645,150 @@ def run_task(state: SessionState, user_task: str, on_step=None, cancel_check=Non
 
     return "Достигнут лимит шагов (защита от зацикливания). Задача не завершена — попробуй сузить запрос.", changed_files, None
 
+_STEP_INTRO_BY_LANG = {
+    "ru": "Ход выполнения задачи ({n} шаг(ов)):",
+    "en": "Task steps ({n} step(s)):",
+    "es": "Pasos de la tarea ({n} paso(s)):",
+}
+
+_STEP_FAILED_BY_LANG = {
+    "ru": "{desc} — не получилось ({error})",
+    "en": "{desc} — failed ({error})",
+    "es": "{desc} — falló ({error})",
+}
+
+
+def _step_result(step: dict) -> tuple[dict | None, str | None]:
+    """Разбирает сохранённый в task_log JSON результата шага.
+    Возвращает (result_dict_или_None, текст_ошибки_или_None)."""
+    try:
+        parsed = json.loads(step["result"])
+    except (json.JSONDecodeError, TypeError, KeyError):
+        return None, None
+    if not isinstance(parsed, dict):
+        return None, None
+    return parsed.get("result"), parsed.get("error")
+
+
+def _describe_step_ru(step: dict) -> str:
+    tool, args = step["tool"], step.get("args", {})
+    res, error = _step_result(step)
+    if tool == "list_tree":
+        base = "просмотрел структуру проекта"
+    elif tool == "create_folder":
+        base = f"создал папку {args.get('relative_path', '?')}"
+    elif tool == "search_content":
+        pattern = args.get("pattern", "?")
+        count = len(res["matches"]) if isinstance(res, dict) and "matches" in res else None
+        base = f"искал «{pattern}» по проекту" + (f", найдено совпадений: {count}" if count is not None else "")
+    elif tool == "read_file":
+        base = f"прочитал файл {args.get('path', '?')}"
+    elif tool == "write_file":
+        path = args.get("path", "?")
+        created = isinstance(res, dict) and res.get("created")
+        base = f"создал файл {path}" if created else f"изменил файл {path}"
+    elif tool == "move_file":
+        base = f"переместил {args.get('source_path', '?')} → {args.get('destination_path', '?')}"
+    elif tool == "delete_file":
+        base = f"удалил файл {args.get('relative_path', '?')}"
+    elif tool == "delete_folder":
+        base = f"удалил папку {args.get('relative_path', '?')} со всем содержимым"
+    elif tool == "get_current_datetime":
+        base = "узнал текущую дату/время"
+    elif tool == "read_web_page":
+        base = f"загрузил страницу {args.get('url', '?')}"
+    else:
+        base = f"вызвал инструмент {tool}"
+    return _STEP_FAILED_BY_LANG["ru"].format(desc=base, error=error) if error else base
+
+
+def _describe_step_en(step: dict) -> str:
+    tool, args = step["tool"], step.get("args", {})
+    res, error = _step_result(step)
+    if tool == "list_tree":
+        base = "looked at the project structure"
+    elif tool == "create_folder":
+        base = f"created folder {args.get('relative_path', '?')}"
+    elif tool == "search_content":
+        pattern = args.get("pattern", "?")
+        count = len(res["matches"]) if isinstance(res, dict) and "matches" in res else None
+        base = f"searched the project for \"{pattern}\"" + (f", found {count} match(es)" if count is not None else "")
+    elif tool == "read_file":
+        base = f"read file {args.get('path', '?')}"
+    elif tool == "write_file":
+        path = args.get("path", "?")
+        created = isinstance(res, dict) and res.get("created")
+        base = f"created file {path}" if created else f"modified file {path}"
+    elif tool == "move_file":
+        base = f"moved {args.get('source_path', '?')} → {args.get('destination_path', '?')}"
+    elif tool == "delete_file":
+        base = f"deleted file {args.get('relative_path', '?')}"
+    elif tool == "delete_folder":
+        base = f"deleted folder {args.get('relative_path', '?')} and its contents"
+    elif tool == "get_current_datetime":
+        base = "checked the current date/time"
+    elif tool == "read_web_page":
+        base = f"loaded page {args.get('url', '?')}"
+    else:
+        base = f"called tool {tool}"
+    return _STEP_FAILED_BY_LANG["en"].format(desc=base, error=error) if error else base
+
+
+def _describe_step_es(step: dict) -> str:
+    tool, args = step["tool"], step.get("args", {})
+    res, error = _step_result(step)
+    if tool == "list_tree":
+        base = "revisó la estructura del proyecto"
+    elif tool == "create_folder":
+        base = f"creó la carpeta {args.get('relative_path', '?')}"
+    elif tool == "search_content":
+        pattern = args.get("pattern", "?")
+        count = len(res["matches"]) if isinstance(res, dict) and "matches" in res else None
+        base = f"buscó «{pattern}» en el proyecto" + (f", {count} coincidencia(s)" if count is not None else "")
+    elif tool == "read_file":
+        base = f"leyó el archivo {args.get('path', '?')}"
+    elif tool == "write_file":
+        path = args.get("path", "?")
+        created = isinstance(res, dict) and res.get("created")
+        base = f"creó el archivo {path}" if created else f"modificó el archivo {path}"
+    elif tool == "move_file":
+        base = f"movió {args.get('source_path', '?')} → {args.get('destination_path', '?')}"
+    elif tool == "delete_file":
+        base = f"eliminó el archivo {args.get('relative_path', '?')}"
+    elif tool == "delete_folder":
+        base = f"eliminó la carpeta {args.get('relative_path', '?')} y su contenido"
+    elif tool == "get_current_datetime":
+        base = "consultó la fecha/hora actual"
+    elif tool == "read_web_page":
+        base = f"cargó la página {args.get('url', '?')}"
+    else:
+        base = f"llamó a la herramienta {tool}"
+    return _STEP_FAILED_BY_LANG["es"].format(desc=base, error=error) if error else base
+
+
+_DESCRIBE_STEP_BY_LANG = {"ru": _describe_step_ru, "en": _describe_step_en, "es": _describe_step_es}
+
+
 def summarize_task(state: SessionState, user_task: str, task_log: list[dict], final_text: str) -> str:
     """
-    Пункт 5.2 плана. Доп. вызов LLM (tier="fast"), об generalize шаги ОДНОЙ
-    конкретной задачи в связный текст для пользователя — что искал, что
-    нашёл, что изменил, в каком порядке. Аналог update_project_summary, но
-    для одной задачи, а не для всей сессии.
+    Пункт 5.2 плана (переработано): резюме шагов ОДНОЙ конкретной задачи
+    собирается кодом напрямую из task_log — без обращения к LLM. Это
+    полностью убирает риск "фантазирования" (выдуманных шагов или
+    несуществующей архитектуры), которым страдала предыдущая версия на
+    базе LLM: теперь в резюме попадает буквально то и только то, что
+    реально записано в task_log.
 
-    Вызывать только когда task_log не пуст (в задаче действительно были шаги) —
-    вызывающий код (run_task) уже это проверяет перед вызовом. Если сама
-    генерация не удалась (сбой провайдера) — возвращает "" вместо ошибки,
-    чтобы не портить уже готовый основной ответ пользователю.
+    Вызывать только когда task_log не пуст — вызывающий код (run_task)
+    уже это проверяет перед вызовом.
     """
     if len(task_log) == 0:
         return final_text
-    steps_text = "\n".join(
-        f"- Инструмент {s['tool']} с аргументами {s['args']}: {s['result']}"
-        for s in task_log
-    )
-    lang_name = _LANG_NAMES.get(state.lang, _LANG_NAMES["ru"])
-    prompt = (
-        f"Пользователь попросил: {user_task}\n\n"
-        f"Агент выполнил следующие шаги:\n{steps_text}\n\n"
-        "Описывай ТОЛЬКО те шаги, которые действительно перечислены выше. Если шагов мало или они не связаны с итоговым результатом — так и скажи, не выдумывай действия, которые не были выполнены.\n\n"
-        f"Финальный ответ агента пользователю: {final_text}\n\n"
-        "Напиши развёрнутое резюме хода выполнения ЭТОЙ конкретной задачи для "
-        "пользователя: что искал, что нашёл, что изменил и в каком порядке. "
-        f"3-6 предложений, обычный текст, без JSON. Отвечай СТРОГО на "
-        f"{lang_name} языке, независимо от языка шагов выше."
-    )
-    try:
-        response = call_llm([{"role": "user", "content": prompt}], tier="fast")
-        return response.text
-    except Exception as e:
-        logger.warning("Не удалось сгенерировать резюме задачи (сессия %s): %s", state.session_id, e)
-        return ""
+    describe = _DESCRIBE_STEP_BY_LANG.get(state.lang, _describe_step_ru)
+    intro = _STEP_INTRO_BY_LANG.get(state.lang, _STEP_INTRO_BY_LANG["ru"]).format(n=len(task_log))
+    lines = [intro]
+    for i, step in enumerate(task_log, start=1):
+        lines.append(f"{i}. {describe(step)}")
+    return "\n".join(lines)
 
 
 def update_project_summary(state: SessionState) -> str:

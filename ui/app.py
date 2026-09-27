@@ -27,10 +27,58 @@ from PySide6.QtWidgets import (
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QPainter, QColor, QPen, QPalette, QFont, QFontDatabase, QIcon
+from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtGui import QPainter, QColor, QPen, QPalette, QFont, QFontDatabase, QIcon, QFontMetrics
 
 from agent.loop import SessionState, run_task, update_project_summary
+
+
+class AutoGrowTextEdit(QTextEdit):
+    """
+    Многострочное поле ввода, которое само растёт по высоте по мере набора
+    текста (как поле ввода в обычном чате), вместо однострочного QLineEdit,
+    где длинный текст просто уезжает вбок и не виден целиком.
+
+    Enter отправляет задачу (сигнал submitted), Shift+Enter — перенос строки.
+    Растёт до max_lines строк, дальше появляется вертикальный скролл внутри
+    самого поля — окно программы не разъезжается на весь экран от одного
+    длинного сообщения.
+    """
+    submitted = Signal()
+
+    def __init__(self, parent=None, min_lines: int = 1, max_lines: int = 6):
+        super().__init__(parent)
+        self.setAcceptRichText(False)
+        self.setTabChangesFocus(True)
+        self._min_lines = min_lines
+        self._max_lines = max_lines
+        self.document().documentLayout().documentSizeChanged.connect(self._adjust_height)
+        self._adjust_height()
+
+    def keyPressEvent(self, event):
+        no_modifiers = not (event.modifiers() & (Qt.ShiftModifier | Qt.ControlModifier | Qt.AltModifier))
+        if event.key() in (Qt.Key_Return, Qt.Key_Enter) and no_modifiers:
+            event.accept()
+            if self.toPlainText().strip():
+                self.submitted.emit()
+            return
+        super().keyPressEvent(event)
+
+    def _adjust_height(self, *args):
+        line_height = QFontMetrics(self.font()).lineSpacing()
+        frame = self.frameWidth() * 2
+        vpad = self.document().documentMargin() * 2 + 10  # небольшой запас, чтобы текст не липнул к рамке
+        doc_height = self.document().size().height()
+
+        min_h = int(line_height * self._min_lines + frame + vpad)
+        max_h = int(line_height * self._max_lines + frame + vpad)
+        target_h = int(doc_height + frame + vpad)
+        new_h = max(min_h, min(max_h, target_h))
+
+        self.setFixedHeight(new_h)
+        self.setVerticalScrollBarPolicy(
+            Qt.ScrollBarAsNeeded if target_h > max_h else Qt.ScrollBarAlwaysOff
+        )
 
 
 def _resource_path(*parts) -> Path:
@@ -132,14 +180,13 @@ QLineEdit:disabled {{
     color: #555a66;
     border: 1px solid #2a2f3a;
 }}
-QLineEdit#taskInput {{
+QTextEdit#taskInput {{
     font-size: 17px;
     padding: 12px;
     border: 2px solid #00fff9;
     border-radius: 4px;
-    min-height: 28px;
 }}
-QLineEdit#taskInput:focus {{
+QTextEdit#taskInput:focus {{
     border: 2px solid #ff00ff;
 }}
 QTextEdit {{
@@ -349,7 +396,7 @@ class MatrixRainWidget(QWidget):
                 painter.drawText(int(col["x"]), int(y), ch)
 
 
-from PySide6.QtCore import QThread, Signal
+from PySide6.QtCore import QThread
 
 class AgentTaskWorker(QThread):
     finished = Signal(str, list, str)  # answer, changed_files, task_summary
@@ -537,24 +584,24 @@ class MainWindow(QMainWindow):
 
         # --- Низ: ввод задачи (крупное поле с явной рамкой) ---
         input_layout = QHBoxLayout()
-        self.task_input = QLineEdit()
+        self.task_input = AutoGrowTextEdit(min_lines=1, max_lines=6)
         self.task_input.setObjectName("taskInput")
         self.task_input.setEnabled(False)
-        self.task_input.returnPressed.connect(self.send_task)
-        input_layout.addWidget(self.task_input, stretch=1)
+        self.task_input.submitted.connect(self.send_task)
+        input_layout.addWidget(self.task_input, stretch=1, alignment=Qt.AlignBottom)
 
         self.send_button = QPushButton()
         self.send_button.setObjectName("sendButton")
         self.send_button.setEnabled(False)
         self.send_button.clicked.connect(self.send_task)
-        input_layout.addWidget(self.send_button)
+        input_layout.addWidget(self.send_button, alignment=Qt.AlignBottom)
 
         
         self.cancel_button = QPushButton()
         self.cancel_button.setObjectName("cancelButton")
         self.cancel_button.setEnabled(False)
         self.cancel_button.clicked.connect(self.cancel_task)
-        input_layout.addWidget(self.cancel_button)
+        input_layout.addWidget(self.cancel_button, alignment=Qt.AlignBottom)
 
         main_layout.addLayout(input_layout)
 
@@ -657,7 +704,7 @@ class MainWindow(QMainWindow):
         cursor.deletePreviousChar()  # убираем лишний перевод строки после удаления
 
     def send_task(self):
-        task = self.task_input.text().strip()
+        task = self.task_input.toPlainText().strip()
         if not task or self.state is None:   
             return
 

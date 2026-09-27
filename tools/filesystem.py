@@ -262,6 +262,12 @@ def write_file(root: str, relative_path: str, content: str, write_enabled: bool 
     ограничения по конкретным файлам в пользу общего разрешения на запись.
     Защита теперь не "какие файлы можно трогать", а "можно трогать
     файлы вообще, в этой сессии, или нет".
+
+    Автоматически создаёт все промежуточные папки по пути relative_path,
+    если их ещё нет (full_path.parent.mkdir(parents=True, exist_ok=True)).
+    Например, write_file(root, "new_folder/sub/file.txt", ...) создаст
+    "new_folder" и "new_folder/sub" сам, без отдельного вызова другого
+    инструмента.
     """
     if not write_enabled:
         raise PermissionError(
@@ -294,7 +300,40 @@ def write_file(root: str, relative_path: str, content: str, write_enabled: bool 
 
 import shutil
 
+def create_folder(root: str, relative_path: str, write_enabled: bool = False) -> dict:
+    """
+    Создаёт пустую папку (и все промежуточные папки по пути) внутри проекта.
+    В отличие от move_file/write_file, ничего не перемещает и не пишет —
+    это единственный способ создать папку, не трогая никакие файлы.
+    Если папка уже существует — не считается ошибкой, просто сообщает об этом.
+    """
+    if not write_enabled:
+        raise PermissionError("Запись в файлы проекта не разрешена в этой сессии")
+
+    root_resolved = Path(root).resolve()
+    full_path = (Path(root) / relative_path).resolve()
+
+    if not str(full_path).startswith(str(root_resolved)):
+        raise ValueError("Путь выходит за пределы разрешённого проекта")
+    if full_path.exists() and full_path.is_file():
+        raise FileExistsError(
+            f"По пути '{relative_path}' уже существует файл (не папка) — нельзя создать папку с тем же именем."
+        )
+
+    already_existed = full_path.is_dir()
+    full_path.mkdir(parents=True, exist_ok=True)
+    return {"path": relative_path, "created": not already_existed, "already_existed": already_existed}
+
+
 def move_file(root: str, source_path: str, destination_path: str, write_enabled: bool = False) -> dict:
+    """
+    Перемещает или переименовывает файл внутри проекта.
+    Если папок по пути destination_path ещё не существует, они создаются
+    автоматически (mkdir(parents=True, exist_ok=True)) — можно одним вызовом
+    переместить файл в ещё не созданную вложенную папку, например
+    move_file(root, "old.txt", "NewFolder/old.txt", write_enabled=True)
+    создаст "NewFolder" сам, отдельного инструмента для создания папки не требуется.
+    """
     if not write_enabled:
         raise PermissionError("Запись в файлы проекта не разрешена в этой сессии")
     
@@ -325,4 +364,37 @@ def delete_file(root: str, relative_path: str, write_enabled: bool = False) -> d
         raise FileNotFoundError(f"Файл не найден: {relative_path}")
     
     full_path.unlink()
+    return {"path": relative_path, "deleted": True}
+
+
+def delete_folder(root: str, relative_path: str, write_enabled: bool = False) -> dict:
+    """
+    Удаляет папку целиком вместе со всем содержимым (shutil.rmtree).
+    В отличие от delete_file, работает только с директориями — если по
+    relative_path находится файл, а не папка, отказывает с понятной ошибкой,
+    чтобы модель не путала два инструмента между собой.
+
+    Дополнительная защита: запрещено удалять сам корень проекта (root) —
+    даже с write_enabled=True, чтобы одна ошибка модели не снесла весь
+    открытый проект целиком.
+    """
+    if not write_enabled:
+        raise PermissionError("Запись в файлы проекта не разрешена в этой сессии")
+
+    root_resolved = Path(root).resolve()
+    full_path = (Path(root) / relative_path).resolve()
+
+    if not str(full_path).startswith(str(root_resolved)):
+        raise ValueError("Путь выходит за пределы разрешённого проекта")
+    if full_path == root_resolved:
+        raise ValueError("Нельзя удалить корневую папку проекта целиком")
+    if not full_path.exists():
+        raise FileNotFoundError(f"Папка не найдена: {relative_path}")
+    if not full_path.is_dir():
+        raise NotADirectoryError(
+            f"'{relative_path}' — это файл, а не папка. "
+            "Для удаления файла используй delete_file."
+        )
+
+    shutil.rmtree(full_path)
     return {"path": relative_path, "deleted": True}
