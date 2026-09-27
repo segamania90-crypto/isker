@@ -282,7 +282,14 @@ def _execute_tool(state: SessionState, tool: str, args: dict) -> dict:
         return {"result": fs.write_file(
             state.project_root, target_path, args["content"], write_enabled=state.write_enabled
         )}
-    
+    if tool == "move_file":
+        return {"result": fs.move_file(
+            state.project_root, args["source_path"], args["destination_path"], write_enabled=state.write_enabled
+        )}
+    if tool == "delete_file":
+        return {"result": fs.delete_file(
+            state.project_root, args["relative_path"], write_enabled=state.write_enabled
+        )}
     raise ValueError(f"Неизвестный инструмент: {tool}")
 
 
@@ -384,6 +391,12 @@ def run_task(state: SessionState, user_task: str, on_step=None, cancel_check=Non
             "path и offset, равным полученному \"next_offset\", чтобы прочитать следующую часть. "
             "Повторяй, пока \"truncated\" не станет false, чтобы увидеть файл целиком.\n"
             "- write_file(path, content) -> записать файл (доступно только если запись разрешена в этой сессии)\n"
+            "- move_file(source_path, destination_path) -> переместить или переименовать файл внутри проекта. "
+            "source_path — относительный путь исходного файла, destination_path — относительный путь назначения. "
+            "(доступно только если запись разрешена в этой сессии)\n"
+            "- delete_file(relative_path) -> удалить файл внутри проекта. "
+            "relative_path — относительный путь удаляемого файла. "
+            "(доступно только если запись разрешена в этой сессии)\n"
             "- get_current_datetime(timezone=null) -> реальные текущие дата и время. "
             "Без timezone — время компьютера пользователя. С timezone (IANA-формат, например "
             "\"Europe/Madrid\", \"Asia/Almaty\", \"UTC\") — время в этом часовом поясе. "
@@ -403,7 +416,7 @@ def run_task(state: SessionState, user_task: str, on_step=None, cancel_check=Non
     else:
         tools_section = (
             "Проект сейчас НЕ открыт. Инструменты работы с файлами (list_tree, search_content, "
-            "read_file, write_file) недоступны — не пытайся их вызывать, для вопросов о коде "
+            "read_file, write_file, move_file, delete_file) недоступны — не пытайся их вызывать, для вопросов о коде "
             "проекта сразу отвечай action=\"final\" текстом.\n\n"
             "Однако тебе доступен инструмент get_current_datetime(timezone=null) -> реальные "
             "текущие дата и время. Без timezone — время компьютера пользователя. С timezone "
