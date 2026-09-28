@@ -59,8 +59,7 @@ class AutoGrowTextEdit(QTextEdit):
         no_modifiers = not (event.modifiers() & (Qt.ShiftModifier | Qt.ControlModifier | Qt.AltModifier))
         if event.key() in (Qt.Key_Return, Qt.Key_Enter) and no_modifiers:
             event.accept()
-            if self.toPlainText().strip():
-                self.submitted.emit()
+            QTimer.singleShot(0, lambda: self.submitted.emit() if self.toPlainText().strip() else None)
             return
         super().keyPressEvent(event)
 
@@ -75,10 +74,12 @@ class AutoGrowTextEdit(QTextEdit):
         target_h = int(doc_height + frame + vpad)
         new_h = max(min_h, min(max_h, target_h))
 
-        self.setFixedHeight(new_h)
-        self.setVerticalScrollBarPolicy(
-            Qt.ScrollBarAsNeeded if target_h > max_h else Qt.ScrollBarAlwaysOff
-        )
+        def _apply():
+            self.setFixedHeight(new_h)
+            self.setVerticalScrollBarPolicy(
+                Qt.ScrollBarAsNeeded if target_h > max_h else Qt.ScrollBarAlwaysOff
+            )
+            QTimer.singleShot(0, _apply)
 
 
 def _resource_path(*parts) -> Path:
@@ -699,9 +700,9 @@ class MainWindow(QMainWindow):
         убрать временную надпись 'ISKER думает...' перед показом реального ответа."""
         cursor = self.chat_history.textCursor()
         cursor.movePosition(cursor.MoveOperation.End)
-        cursor.select(cursor.SelectionType.BlockUnderCursor)
+        cursor.movePosition(cursor.MoveOperation.StartOfBlock, cursor.MoveMode.KeepAnchor)
         cursor.removeSelectedText()
-        cursor.deletePreviousChar()  # убираем лишний перевод строки после удаления
+        cursor.deletePreviousChar()
 
     def send_task(self):
         task = self.task_input.toPlainText().strip()
