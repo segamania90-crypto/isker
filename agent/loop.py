@@ -793,23 +793,38 @@ def summarize_task(state: SessionState, user_task: str, task_log: list[dict], fi
 
 def update_project_summary(state: SessionState) -> str:
     """
-    Просит модель суммировать всё, что сделано в этой сессии, и сохраняет
-    результат в долгую память (переживает перезапуск агента).
-    Вызывать вручную в конце сессии работы над проектом.
+    Сохраняет в долгую память проекта список задач, которые пользователь
+    реально ставил агенту. Резюме собирается кодом из журнала сессии, без
+    обращения к LLM, поэтому выдумать в нём ничего невозможно.
+    Хранятся последние 10 задач (по одной строке: дата и текст задачи).
+    Вызывается при закрытии программы.
     """
+    import re
+    from datetime import datetime
+
+    if not state.project_root:
+        return "Сессия без проекта, сохранять нечего."
+
     session_turns = state.memory.get_session_history(state.session_id)
-    if not session_turns:
+    tasks: list[str] = []
+    for t in session_turns:
+        if t["role"] != "user":
+            continue
+        text = " ".join(t["content"].split())[:150]
+        if text and text not in tasks:
+            tasks.append(text)
+    if not tasks:
         return "Сессия пуста, нечего суммировать."
 
-    transcript = "\n".join(f"{t['role']}: {t['content']}" for t in session_turns)
-    prev_summary = state.memory.get_fact(_project_id(state.project_root), "last_session_summary") or "(нет предыдущего саммари)"
+    project_id = _project_id(state.project_root)
+    prev = state.memory.get_fact(project_id, "last_session_summary") or ""
+    # Из старого значения берём только строки нового формата (дата: задача).
+    # Всё остальное, например выдуманный LLM-текст прежней версии, отбрасывается.
+    line_re = re.compile(r"^\d{4}-\d{2}-\d{2}: ")
+    old_lines = [ln for ln in prev.splitlines() if line_re.match(ln)]
 
-    prompt = (
-        f"Предыдущее саммари проекта:\n{prev_summary}\n\n"
-        f"Действия за текущую сессию:\n{transcript}\n\n"
-        "Обнови саммари проекта: кратко опиши архитектуру и главные изменения "
-        "за эту сессию. 5-8 предложений, обычный текст, без JSON."
-    )
-    response = call_llm([{"role": "user", "content": prompt}], tier="fast")
-    state.memory.set_fact(_project_id(state.project_root), "last_session_summary", response.text)
-    return response.text
+    today = datetime.now().strftime("%Y-%m-%d")
+    new_lines = [f"{today}: {task}" for task in tasks]
+    summary = "\n".join((old_lines + new_lines)[-10:])
+    state.memory.set_fact(project_id, "last_session_summary", summary)
+    return summary
