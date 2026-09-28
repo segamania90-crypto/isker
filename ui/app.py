@@ -640,6 +640,10 @@ class MainWindow(QMainWindow):
 
     def start_session(self):
         project_root = self.project_path_input.text().strip() or None
+        if project_root and not Path(project_root).is_dir():
+            msgs = {"ru": "Папка проекта не найдена", "en": "Project folder not found", "es": "Carpeta del proyecto no encontrada"}
+            self.chat_history.append(f">> ISKER: {msgs.get(self.lang, msgs['en'])}: {html.escape(project_root)}")
+            return
 
         write_enabled = self.allow_write_checkbox.isChecked()
 
