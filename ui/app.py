@@ -79,7 +79,7 @@ class AutoGrowTextEdit(QTextEdit):
             self.setVerticalScrollBarPolicy(
                 Qt.ScrollBarAsNeeded if target_h > max_h else Qt.ScrollBarAlwaysOff
             )
-            QTimer.singleShot(0, _apply)
+        QTimer.singleShot(0, _apply)
 
 
 def _resource_path(*parts) -> Path:
