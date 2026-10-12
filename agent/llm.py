@@ -1,7 +1,7 @@
 """
 Единая точка входа для вызова LLM.
 
-Цепочка провайдеров: Groq -> OpenRouter.
+Цепочка провайдеров: для fast — Groq -> Gemini -> OpenRouter; для strong — OpenRouter -> Groq -> Gemini.
 Каждый новый вызов call_llm() снова начинает с первого доступного провайдера.
 
 Иерархия моделей заложена через параметр tier:
@@ -95,7 +95,7 @@ def _call_gemini(model: str, messages: list[dict]) -> str:
     return _call_openai_compatible("https://generativelanguage.googleapis.com/v1beta/openai", api_key, model, messages)
 
 
-# Цепочка провайдеров без Gemini:
+# Цепочки провайдеров для разных уровней (tier):
 _PROVIDER_CHAINS = {
     "fast": [
         ("groq", _call_groq),
@@ -128,7 +128,10 @@ def _try_chain_once(messages: list[dict], tier: str) -> LLMResponse | None:
                     "LLM FAIL provider=%s model=%s tier=%s attempt=%s reason=%s",
                     provider_name, model, tier, attempt, e,
                 )
-                if "Tool choice is none, but model called a tool" in str(e):
+                err_str = str(e)
+                if err_str.startswith("429") or "429 rate limit" in err_str:
+                    break
+                if "Tool choice is none, but model called a tool" in err_str:
                     break
                 time.sleep(0.5)
                 continue
@@ -139,7 +142,7 @@ def _try_chain_once(messages: list[dict], tier: str) -> LLMResponse | None:
 
 def call_llm(messages: list[dict], tier: str = "fast") -> LLMResponse:
     """
-    Отправляет запрос по цепочке провайдеров (Groq -> OpenRouter).
+    Отправляет запрос по цепочке провайдеров.
     Если вся цепочка отказала — ждёт и пробует заново.
     """
     result = _try_chain_once(messages, tier)
