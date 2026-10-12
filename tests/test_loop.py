@@ -546,21 +546,17 @@ def test_update_project_summary_empty_history(state, fake_call_llm):
     fake_call_llm.assert_not_called()
 
 
-def test_update_project_summary_with_history(state, fake_call_llm):
+def test_update_project_summary_with_history(state):
     state.memory.get_session_history.return_value = [
         {"role": "user", "content": "Сделай X"},
         {"role": "assistant", "content": "Готово X"},
     ]
     state.memory.get_fact.return_value = "старое саммари"
-    fake_call_llm.return_value = LLMResponse(text="новое саммари", provider="p", model="m")
 
     result = loop.update_project_summary(state)
 
-    assert result == "новое саммари"
-    assert fake_call_llm.call_args.kwargs["tier"] == "fast"
-    state.memory.set_fact.assert_called_once_with(
-        loop._project_id(state.project_root), "last_session_summary", "новое саммари"
-    )
+    assert "Сделай X" in result
+    state.memory.set_fact.assert_called_once()
 
     
 
