@@ -33,7 +33,7 @@ from agent.memory import Memory
 
 logger = logging.getLogger("agent.loop")
 
-MAX_STEPS = 15  # защита от зацикливания
+MAX_STEPS = int(os.getenv("MAX_STEPS", "100"))  # увеличенный лимит шагов (настраивается в .env)
 
 # Этап 4: управление контекстом под лимиты бесплатных провайдеров.
 # CONTEXT_TOKEN_LIMIT — консервативный бюджет на один запрос (можно менять в .env,
