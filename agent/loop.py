@@ -567,7 +567,10 @@ def run_task(state: SessionState, user_task: str, on_step=None, cancel_check=Non
                 state.history.append({"role": "assistant", "content": final_text})
                 state.memory.log_turn(state.session_id, "user", user_task)
                 state.memory.log_turn(state.session_id, "assistant", final_text)
-                state.task_cache[cache_key] = (final_text, changed_files)
+                if changed_files:
+                    state.task_cache.clear()
+                else:
+                    state.task_cache[cache_key] = (final_text, changed_files)
                 task_summary = summarize_task(state, user_task, task_log, final_text) if task_log else None
                 return final_text, changed_files, task_summary
 
@@ -591,7 +594,6 @@ def run_task(state: SessionState, user_task: str, on_step=None, cancel_check=Non
                         state.history.append({"role": "assistant", "content": known_friendly})
                         state.memory.log_turn(state.session_id, "user", user_task)
                         state.memory.log_turn(state.session_id, "assistant", known_friendly)
-                        state.task_cache[cache_key] = (known_friendly, changed_files)
                         return known_friendly, changed_files, None
                     # Незнакомая ошибка — отдаём модели, пусть сформулирует сама.
                     tool_result = {"error": error_str}
