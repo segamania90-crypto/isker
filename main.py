@@ -12,10 +12,18 @@ Desktop-интерфейс на PySide6 — отдельный, более по�
 
 import logging
 import sys
+import os
 from datetime import datetime
 from dotenv import load_dotenv
 
-load_dotenv()
+if getattr(sys, 'frozen', False):
+    _app_path = os.path.dirname(sys.executable)
+else:
+    _app_path = os.path.dirname(os.path.abspath(__file__))
+
+load_dotenv(os.path.join(_app_path, '.env'))
+
+
 
 from agent.loop import SessionState, run_task, update_project_summary
 
