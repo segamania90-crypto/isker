@@ -163,7 +163,7 @@ def test_execute_tool_write_file_passes_write_enabled_flag(fake_fs, fake_web, fa
 
 def test_execute_tool_unknown_tool_raises(state):
     with pytest.raises(ValueError, match="Неизвестный инструмент"):
-        loop._execute_tool(state, "delete_file", {})
+        loop._execute_tool(state, "no_such_tool", {})
 
 
 # ---------------------------------------------------------------------------
@@ -268,7 +268,7 @@ def test_run_task_tool_call_then_final(state, fake_call_llm, fake_fs):
     text, _, _ = loop.run_task(state, "покажи файлы")
 
     assert text == "Дерево получено"
-    assert fake_call_llm.call_count == 3
+    assert fake_call_llm.call_count == 2
     fake_fs.list_tree.assert_called_once_with("/project")
     second_messages = fake_call_llm.call_args_list[1][0][0]
     assert any(

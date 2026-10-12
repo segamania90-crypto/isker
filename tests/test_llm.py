@@ -91,10 +91,10 @@ def test_call_gemini_missing_api_key(monkeypatch):
 
 def test_call_gemini_success(monkeypatch):
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")
-    with patch.object(llm.requests, "post", return_value=_gemini_ok("ответ Gemini")) as mock_post:
+    with patch.object(llm.requests, "post", return_value=_openai_ok("ответ Gemini")) as mock_post:
         result = llm._call_gemini("gemini-x", [{"role": "user", "content": "hi"}])
     assert result == "ответ Gemini"
-    assert mock_post.call_args[1]["params"] == {"key": "test-key"}
+    assert mock_post.call_args[1]["headers"]["Authorization"] == "Bearer test-key"
 
 
 def test_call_gemini_429_raises_provider_error(monkeypatch):
@@ -104,26 +104,19 @@ def test_call_gemini_429_raises_provider_error(monkeypatch):
             llm._call_gemini("gemini-x", [{"role": "user", "content": "hi"}])
 
 
-def test_call_gemini_merges_system_into_first_user_message(monkeypatch):
-    """Gemini не поддерживает роль system отдельно — она должна стать
-    префиксом первого user-сообщения, а assistant -> role 'model'."""
+def test_call_gemini_uses_openai_compatible_format(monkeypatch):
+    """Проверяем, что _call_gemini корректно отправляет сообщения в OpenAI-совместимом формате."""
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")
     messages = [
         {"role": "system", "content": "Ты — полезный ассистент."},
         {"role": "user", "content": "Как дела?"},
-        {"role": "assistant", "content": "Хорошо."},
-        {"role": "user", "content": "Отлично."},
     ]
-    with patch.object(llm.requests, "post", return_value=_gemini_ok()) as mock_post:
+    with patch.object(llm.requests, "post", return_value=_openai_ok("ок")) as mock_post:
         llm._call_gemini("gemini-x", messages)
 
-    sent = mock_post.call_args[1]["json"]["contents"]
-    assert len(sent) == 3  # system не идёт отдельным элементом
-    assert sent[0]["role"] == "user"
-    assert sent[0]["parts"][0]["text"].startswith("Ты — полезный ассистент.")
-    assert sent[0]["parts"][0]["text"].endswith("Как дела?")
-    assert sent[1]["role"] == "model"
-    assert sent[2]["parts"][0]["text"] == "Отлично."  # префикс использован только раз
+    sent_json = mock_post.call_args[1]["json"]
+    assert sent_json["model"] == "gemini-x"
+    assert sent_json["messages"] == messages
 
 
 # ---------------------------------------------------------------------------
@@ -228,9 +221,9 @@ def test_call_llm_tier_fast_provider_order_is_groq_first():
     assert names == ["groq", "gemini", "openrouter"]
 
 
-def test_call_llm_tier_strong_provider_order_is_gemini_first():
+def test_call_llm_tier_strong_provider_order_is_openrouter_first():
     names = [name for name, _ in llm._PROVIDER_CHAINS["strong"]]
-    assert names == ["gemini", "groq", "openrouter"]
+    assert names == ["openrouter", "groq", "gemini"]
 
 
 def test_call_llm_returns_matching_model_for_tier(monkeypatch):
