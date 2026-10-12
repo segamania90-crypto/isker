@@ -21,6 +21,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import posixpath
 from dataclasses import dataclass, field
 
 from pathlib import Path
@@ -277,6 +278,27 @@ def _project_id(project_root: str) -> str:
     return str(Path(project_root).resolve())
 
 
+def _normalize_rel_path(path: str) -> str:
+    if not path:
+        return path
+    p = path.replace("\\", "/")
+    if p.startswith("./"):
+        p = p[2:]
+    return posixpath.normpath(p)
+
+
+def _check_allowed(state: SessionState, path: str):
+    if not state.allowed_files:
+        return
+    norm_path = _normalize_rel_path(path)
+    allowed_norm = {_normalize_rel_path(f) for f in state.allowed_files}
+    if norm_path not in allowed_norm:
+        raise PermissionError(
+            f"Запись в файл '{path}' не разрешена в этой сессии. "
+            f"Разрешены к записи только: {sorted(state.allowed_files)}."
+        )
+
+
 def _execute_tool(state: SessionState, tool: str, args: dict) -> dict:
     if tool == "get_current_datetime":
         return {"result": fs.get_current_datetime(timezone=args.get("timezone"))}
@@ -298,29 +320,35 @@ def _execute_tool(state: SessionState, tool: str, args: dict) -> dict:
         return {"result": fs.read_file(state.project_root, args["path"], offset=offset)}
     if tool == "write_file":
         target_path = args["path"]
-        if state.allowed_files and target_path not in state.allowed_files:
-            raise PermissionError(
-                f"Запись в файл '{target_path}' не разрешена в этой сессии. "
-                f"Разрешены к записи только: {sorted(state.allowed_files)}."
-            )
+        _check_allowed(state, target_path)
         return {"result": fs.write_file(
             state.project_root, target_path, args["content"], write_enabled=state.write_enabled
         )}
     if tool == "create_folder":
+        rel_path = args["relative_path"]
+        _check_allowed(state, rel_path)
         return {"result": fs.create_folder(
-            state.project_root, args["relative_path"], write_enabled=state.write_enabled
+            state.project_root, rel_path, write_enabled=state.write_enabled
         )}
     if tool == "move_file":
+        src_path = args["source_path"]
+        dst_path = args["destination_path"]
+        _check_allowed(state, src_path)
+        _check_allowed(state, dst_path)
         return {"result": fs.move_file(
-            state.project_root, args["source_path"], args["destination_path"], write_enabled=state.write_enabled
+            state.project_root, src_path, dst_path, write_enabled=state.write_enabled
         )}
     if tool == "delete_file":
+        rel_path = args["relative_path"]
+        _check_allowed(state, rel_path)
         return {"result": fs.delete_file(
-            state.project_root, args["relative_path"], write_enabled=state.write_enabled
+            state.project_root, rel_path, write_enabled=state.write_enabled
         )}
     if tool == "delete_folder":
+        rel_path = args["relative_path"]
+        _check_allowed(state, rel_path)
         return {"result": fs.delete_folder(
-            state.project_root, args["relative_path"], write_enabled=state.write_enabled
+            state.project_root, rel_path, write_enabled=state.write_enabled
         )}
     raise ValueError(f"Неизвестный инструмент: {tool}")
 
