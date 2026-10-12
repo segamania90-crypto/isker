@@ -518,6 +518,7 @@ def run_task(state: SessionState, user_task: str, on_step=None, cancel_check=Non
     messages.append({"role": "user", "content": user_task})
 
     failed_parse_count = 0
+    parse_fix_start = None
     try:
         for step in range(MAX_STEPS):
             if cancel_check and cancel_check():
@@ -538,9 +539,14 @@ def run_task(state: SessionState, user_task: str, on_step=None, cancel_check=Non
 
             try:
                 decision = _parse_model_json(response.text)
+                if parse_fix_start is not None:
+                    del messages[parse_fix_start:]
+                    parse_fix_start = None
                 failed_parse_count = 0
             except json.JSONDecodeError:
                 failed_parse_count += 1
+                if failed_parse_count == 1:
+                    parse_fix_start = len(messages)
                 if failed_parse_count >= 3:
                     error_text = "Модель вернула некорректный ответ несколько раз подряд, попробуйте переформулировать задачу или сменить модель"
                     return error_text, changed_files, None
