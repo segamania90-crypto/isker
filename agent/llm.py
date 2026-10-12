@@ -44,13 +44,17 @@ MODELS = {
         "fast": os.getenv("GROQ_MODEL_FAST", "openai/gpt-oss-20b"),
         "strong": os.getenv("GROQ_MODEL_STRONG", "openai/gpt-oss-120b"),
     },
+    "gemini": {
+        "fast": os.getenv("GEMINI_MODEL_FAST", "gemini-2.5-flash"),
+        "strong": os.getenv("GEMINI_MODEL_STRONG", "gemini-2.5-pro"),
+    },
     "openrouter": {
         "fast": os.getenv("OPENROUTER_MODEL_FAST", "meta-llama/llama-3.1-8b-instruct:free"),
         "strong": os.getenv("OPENROUTER_MODEL_STRONG", "meta-llama/llama-3.3-70b-instruct:free"),
     },
 }
 
-REQUEST_TIMEOUT = 30  # секунд
+REQUEST_TIMEOUT = 60  # секунд
 MAX_RETRIES_PER_PROVIDER = 1
 CHAIN_RETRY_DELAYS = [5, 15]  # секунды ожидания, если отказали все провайдеры разом
 
@@ -84,15 +88,24 @@ def _call_openrouter(model: str, messages: list[dict]) -> str:
     return _call_openai_compatible("https://openrouter.ai/api/v1", api_key, model, messages)
 
 
+def _call_gemini(model: str, messages: list[dict]) -> str:
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise ProviderError("GEMINI_API_KEY is not set")
+    return _call_openai_compatible("https://generativelanguage.googleapis.com/v1beta/openai", api_key, model, messages)
+
+
 # Цепочка провайдеров без Gemini:
 _PROVIDER_CHAINS = {
     "fast": [
         ("groq", _call_groq),
+        ("gemini", _call_gemini),
         ("openrouter", _call_openrouter),
     ],
     "strong": [
         ("openrouter", _call_openrouter),
         ("groq", _call_groq),
+        ("gemini", _call_gemini),
     ],
 }
 

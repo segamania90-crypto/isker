@@ -505,6 +505,7 @@ def run_task(state: SessionState, user_task: str, on_step=None, cancel_check=Non
             messages = _trim_context_if_needed(messages)
 
             response = call_llm(messages, tier=tier)
+            logger.info("RAW step=%s: %r", step, response.text[:600])
             logger.info("Шаг %s | provider=%s model=%s", step, response.provider, response.model)
 
             try:
@@ -620,7 +621,7 @@ def run_task(state: SessionState, user_task: str, on_step=None, cancel_check=Non
 
                 messages.append({
                     "role": "user",
-                    "content": f"Результат инструмента {tool_name}: {json.dumps(tool_result, ensure_ascii=False)[:30000]}",
+                    "content": f"Результат инструмента {tool_name}: {json.dumps(tool_result, ensure_ascii=False)[:6000]}",
                 })
                 continue
 
@@ -630,7 +631,7 @@ def run_task(state: SessionState, user_task: str, on_step=None, cancel_check=Non
                 "content": 'Некорректное поле "action". Используй только "tool" или "final".',
             })
     except Exception as e:
-        logger.error("Неожиданный сбой в run_task на шаге агента: %s", e)
+        logger.exception("Неожиданный сбой в run_task на шаге агента: %s", e)
         error_str = _friendlify_error(str(e), state.lang)
         if changed_files:
             files_list = "\n".join(f"- {f['path']} ({f['status']})" for f in changed_files)
