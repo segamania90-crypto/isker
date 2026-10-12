@@ -206,7 +206,7 @@ def read_file(root: str, relative_path: str, max_chars: int = 20000, offset: int
     по частям, а не обрезаются молча.
     """
     full_path = (Path(root) / relative_path).resolve()
-    if not str(full_path).startswith(str(Path(root).resolve())):
+    if not full_path.is_relative_to(Path(root).resolve()):
         raise ValueError("Путь выходит за пределы разрешённого проекта")
     if not full_path.exists():
         raise FileNotFoundError(f"Файл не найден: {relative_path}")
@@ -278,7 +278,7 @@ def write_file(root: str, relative_path: str, content: str, write_enabled: bool 
     relative_path = _resolve_existing_sibling(root, relative_path)
 
     full_path = (Path(root) / relative_path).resolve()
-    if not str(full_path).startswith(str(Path(root).resolve())):
+    if not full_path.is_relative_to(Path(root).resolve()):
         raise ValueError("Путь выходит за пределы разрешённого проекта")
 
     full_path.parent.mkdir(parents=True, exist_ok=True)
@@ -313,7 +313,7 @@ def create_folder(root: str, relative_path: str, write_enabled: bool = False) ->
     root_resolved = Path(root).resolve()
     full_path = (Path(root) / relative_path).resolve()
 
-    if not str(full_path).startswith(str(root_resolved)):
+    if not full_path.is_relative_to(root_resolved):
         raise ValueError("Путь выходит за пределы разрешённого проекта")
     if full_path.exists() and full_path.is_file():
         raise FileExistsError(
@@ -340,9 +340,9 @@ def move_file(root: str, source_path: str, destination_path: str, write_enabled:
     full_source = (Path(root) / source_path).resolve()
     full_dest = (Path(root) / destination_path).resolve()
     
-    if not str(full_source).startswith(str(Path(root).resolve())):
+    if not full_source.is_relative_to(Path(root).resolve()):
         raise ValueError("Исходный путь выходит за пределы разрешённого проекта")
-    if not str(full_dest).startswith(str(Path(root).resolve())):
+    if not full_dest.is_relative_to(Path(root).resolve()):
         raise ValueError("Путь назначения выходит за пределы разрешённого проекта")
     if not full_source.exists():
         raise FileNotFoundError(f"Файл не найден: {source_path}")
@@ -358,7 +358,7 @@ def delete_file(root: str, relative_path: str, write_enabled: bool = False) -> d
         raise PermissionError("Запись в файлы проекта не разрешена в этой сессии")
     
     full_path = (Path(root) / relative_path).resolve()
-    if not str(full_path).startswith(str(Path(root).resolve())):
+    if not full_path.is_relative_to(Path(root).resolve()):
         raise ValueError("Путь выходит за пределы разрешённого проекта")
     if not full_path.exists():
         raise FileNotFoundError(f"Файл не найден: {relative_path}")
@@ -384,7 +384,7 @@ def delete_folder(root: str, relative_path: str, write_enabled: bool = False) ->
     root_resolved = Path(root).resolve()
     full_path = (Path(root) / relative_path).resolve()
 
-    if not str(full_path).startswith(str(root_resolved)):
+    if not full_path.is_relative_to(root_resolved):
         raise ValueError("Путь выходит за пределы разрешённого проекта")
     if full_path == root_resolved:
         raise ValueError("Нельзя удалить корневую папку проекта целиком")
