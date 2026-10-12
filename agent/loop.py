@@ -520,7 +520,7 @@ def run_task(state: SessionState, user_task: str, on_step=None, cancel_check=Non
                 messages.append({"role": "assistant", "content": response.text})
                 messages.append({
                     "role": "user",
-                    "content": "Твой ответ не был валидным JSON. Ответь строго одним JSON-объектом, как описано в системном промпте.",
+                    "content": "Твой предыдущий ответ не был валидным JSON. Если это был итоговый ответ пользователю, повтори его ПОЛНОСТЬЮ, обернув в {\"action\": \"final\", \"content\": \"<твой ответ>\"}. Если нужно вызвать инструмент, верни {\"action\": \"tool\", \"tool\": \"...\", \"args\": {...}}. Не пиши ничего, кроме одного JSON-объекта, и не комментируй формат.",
                 })
                 continue
 
