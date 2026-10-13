@@ -144,6 +144,28 @@ _TOOL_DESCRIPTIONS_BY_LANG = {
 }
 
 
+_UNVERIFIED_WRITE_WARNINGS = {
+    "ru": "Инструмент записи не вызывался или завершился ошибкой: на диске ничего не изменено.",
+    "en": "No write tool succeeded: nothing was changed on disk.",
+    "es": "Ninguna herramienta de escritura tuvo éxito: no se cambió nada en el disco.",
+}
+
+
+def _warn_if_unverified_write(final_text: str, wrote: bool, lang: str = "ru") -> str:
+    if wrote or not final_text:
+        return final_text
+    lowered = final_text.lower()
+    keywords = [
+        "создан", "перемещ", "удален", "удалён", "записан", "сохранен", "сохранён",
+        "created", "moved", "deleted", "written", "saved",
+        "creado", "movido", "eliminado", "guardado",
+    ]
+    if any(kw in lowered for kw in keywords):
+        warning = _UNVERIFIED_WRITE_WARNINGS.get(lang, _UNVERIFIED_WRITE_WARNINGS["ru"])
+        return f"{final_text}\n\n{warning}"
+    return final_text
+
+
 def _describe_tool_call(tool: str, args: dict, lang: str = "ru") -> str:
     """Человеко-понятная фраза для live-комментария в UI перед вызовом инструмента.
     Если инструмент неизвестен или аргумент отсутствует — возвращает нейтральный текст."""
@@ -431,6 +453,7 @@ def run_task(state: SessionState, user_task: str, on_step=None, cancel_check=Non
         return cached_text, cached_changed_files, None
 
     changed_files: list[dict] = []
+    wrote_something = False
     # Пункт 5.2: короткий журнал шагов ЭТОЙ задачи (не всей сессии) — нужен
     # только для последующего резюме через summarize_task(). Хранит краткую,
     # обрезанную версию результата каждого инструмента, а не полный текст —
@@ -563,6 +586,7 @@ def run_task(state: SessionState, user_task: str, on_step=None, cancel_check=Non
             if decision.get("action") == "final":
                 final_text = decision.get("content", "")
                 final_text = _friendlify_error(final_text, state.lang)
+                final_text = _warn_if_unverified_write(final_text, wrote_something, state.lang)
                 state.history.append({"role": "user", "content": user_task})
                 state.history.append({"role": "assistant", "content": final_text})
                 state.memory.log_turn(state.session_id, "user", user_task)
@@ -640,6 +664,9 @@ def run_task(state: SessionState, user_task: str, on_step=None, cancel_check=Non
                         if truncated_final:
                             combined_res["note"] = "Достигнут лимит повторов чтения файла."
                         tool_result = {"result": combined_res}
+
+                if (tool_name in {"write_file", "create_folder", "move_file"} or tool_name.startswith("delete_")) and "result" in tool_result:
+                    wrote_something = True
 
                 if tool_name == "write_file" and "result" in tool_result:
                     r = tool_result["result"]

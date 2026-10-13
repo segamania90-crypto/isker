@@ -627,3 +627,26 @@ def test_session_state_lang_can_be_set_explicitly():
         project_root="/project", session_id="s", memory=MagicMock(), lang="en"
     )
     assert s.lang == "en"
+
+
+# ---------------------------------------------------------------------------
+# _warn_if_unverified_write
+# ---------------------------------------------------------------------------
+
+def test_warn_if_unverified_write_adds_warning_when_not_wrote():
+    text = "Файл создан успешно."
+    result = loop._warn_if_unverified_write(text, wrote=False, lang="ru")
+    assert "Инструмент записи не вызывался или завершился ошибкой" in result
+    assert text in result
+
+
+def test_warn_if_unverified_write_does_not_add_warning_when_wrote():
+    text = "Файл создан успешно."
+    result = loop._warn_if_unverified_write(text, wrote=True, lang="ru")
+    assert result == text
+
+
+def test_warn_if_unverified_write_does_not_add_warning_without_keywords():
+    text = "Просто привет!"
+    result = loop._warn_if_unverified_write(text, wrote=False, lang="ru")
+    assert result == text
