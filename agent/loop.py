@@ -22,6 +22,7 @@ import json
 import logging
 import os
 import posixpath
+import re
 from dataclasses import dataclass, field
 
 from pathlib import Path
@@ -166,6 +167,54 @@ def _warn_if_unverified_write(final_text: str, wrote: bool, lang: str = "ru") ->
     return final_text
 
 
+# --- Честность о проделанной работе -----------------------------------------
+# Если задача требует действия в проекте, а модель ответила текстом, не
+# попробовав ни один инструмент записи, её ответ ничем не подкреплён.
+# Код один раз просит вызвать инструмент, а если не вышло, помечает ответ
+# предупреждением и не пускает его ни в историю, ни в кэш.
+_NO_ACTION_WARNINGS = {
+    "ru": "⚠️ Ничего не выполнено: модель не вызвала ни одного инструмента записи, файлы не изменены.",
+    "en": "⚠️ Nothing was done: the model did not call any write tool, no files were changed.",
+    "es": "⚠️ No se hizo nada: el modelo no llamó a ninguna herramienta de escritura, no se cambió ningún archivo.",
+}
+
+_RETRY_WITH_TOOL_PROMPT = (
+    "Ты ответил текстом, но не вызвал ни одного инструмента записи, хотя задача требует "
+    "действия в проекте. Не пиши «готово» или «не могу», пока не получил результат "
+    "инструмента. Если нужное действие есть в списке инструментов, верни "
+    '{"action": "tool", "tool": "...", "args": {...}}. Если запись в этой сессии запрещена, '
+    "всё равно вызови инструмент: система вернёт точную причину. Если задача неясна, "
+    "задай короткий уточняющий вопрос через final."
+)
+
+_WRITE_TOOLS = {"write_file", "create_folder", "move_file"}
+
+# Эвристика: повелительное наклонение глаголов действия. Инфинитивы
+# («как удалить файл?») намеренно не ловятся, чтобы не мешать обычным вопросам.
+_ACTION_TASK_RE = re.compile(
+    r"\b(?:создай|запиши|удали|перемести|переименуй|сохрани|измени|исправь|добавь|"
+    r"допиши|замени|перепиши)(?:те)?\b"
+    r"|\bсделай(?:те)?\s+(?:новую\s+)?(?:папку|файл)\b"
+    r"|\b(?:crea|escribe|borra|elimina|mueve|renombra|guarda|edita|cambia|corrige|"
+    r"añade|agrega|reemplaza|actualiza)\b"
+    r"|(?:^|[.!?;\n]\s*|\bplease\s+)(?:create|write|delete|remove|rename|move|save|edit|"
+    r"modify|fix|add|append|replace|update)\b",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+
+def _task_needs_action(user_task: str) -> bool:
+    return bool(_ACTION_TASK_RE.search(user_task or ""))
+
+
+def _tried_write(task_log: list[dict]) -> bool:
+    """Был ли в этой задаче хотя бы один вызов инструмента записи (даже неудачный)."""
+    return any(
+        step["tool"] in _WRITE_TOOLS or str(step["tool"]).startswith("delete_")
+        for step in task_log
+    )
+
+
 def _describe_tool_call(tool: str, args: dict, lang: str = "ru") -> str:
     """Человеко-понятная фраза для live-комментария в UI перед вызовом инструмента.
     Если инструмент неизвестен или аргумент отсутствует — возвращает нейтральный текст."""
@@ -221,9 +270,17 @@ SYSTEM_PROMPT_TEMPLATE = """Ты — AI-агент, ускоряющий рут�
 "успешно удалено", ни "файл не найден", если ты это не проверял). Вместо
 этого через action="final" честно скажи пользователю, что у тебя нет
 инструмента для этого конкретного действия, и что действительно доступно
-(например: "У меня нет инструмента для удаления файлов — я могу только
-читать, искать и записывать файлы. Удали файл вручную."). Ложь о выполненном
+(например: "У меня нет инструмента для git commit — я могу только
+читать, искать и менять файлы проекта. Сделай коммит вручную."). Ложь о выполненном
 действии недопустима ни при каких обстоятельствах.
+
+КРИТИЧЕСКИ ВАЖНО — НЕ ОТВЕЧАЙ «ГОТОВО» ИЛИ «НЕ МОГУ» БЕЗ ВЫЗОВА ИНСТРУМЕНТА: если
+для просьбы пользователя в списке инструментов ЕСТЬ подходящий инструмент, сначала
+вызови его и дождись результата. Утверждать, что действие выполнено или невозможно,
+можно только на основании реального результата инструмента. Если запись в этой сессии
+запрещена, всё равно вызови инструмент: система вернёт точную причину отказа. Не
+повторяй формулировки своих прошлых отказов из истории диалога: они могли быть
+ошибочными.
 
 КРИТИЧЕСКИ ВАЖНО — НЕ УГАДЫВАЙ РЕЗУЛЬТАТ ИНСТРУМЕНТА ПОСЛЕ СБОЯ: если где-то
 раньше в этом диалоге была ошибка или сбой при попытке вызвать инструмент
@@ -542,6 +599,7 @@ def run_task(state: SessionState, user_task: str, on_step=None, cancel_check=Non
 
     failed_parse_count = 0
     parse_fix_start = None
+    nudged = False  # просили ли уже модель вызвать инструмент
     try:
         for step in range(MAX_STEPS):
             if cancel_check and cancel_check():
@@ -584,16 +642,40 @@ def run_task(state: SessionState, user_task: str, on_step=None, cancel_check=Non
             messages.append({"role": "assistant", "content": response.text})
 
             if decision.get("action") == "final":
-                final_text = decision.get("content", "")
-                final_text = _friendlify_error(final_text, state.lang)
+                raw_content = decision.get("content", "") or ""
+                # Ответ "ничем не подкреплён": задача требует действия, запись не
+                # пробовали, и это не уточняющий вопрос.
+                is_question = raw_content.rstrip().endswith(("?", "？"))
+                ungrounded = (
+                    bool(state.project_root)
+                    and _task_needs_action(user_task)
+                    and not _tried_write(task_log)
+                    and not is_question
+                )
+                if ungrounded and not nudged:
+                    nudged = True
+                    logger.info("Ответ без вызова инструмента на задачу-действие: просим повторить")
+                    messages.append({"role": "user", "content": _RETRY_WITH_TOOL_PROMPT})
+                    continue
+                final_text = _friendlify_error(raw_content, state.lang)
                 final_text = _warn_if_unverified_write(final_text, wrote_something, state.lang)
+                if ungrounded:
+                    warning = _NO_ACTION_WARNINGS.get(state.lang, _NO_ACTION_WARNINGS["ru"])
+                    final_text = f"{warning}\n\n{final_text}"
+                    # Текст модели (отказ или выдумка) в историю не пишем, чтобы
+                    # она не копировала его в следующих задачах.
+                    history_text = warning
+                else:
+                    history_text = final_text
                 state.history.append({"role": "user", "content": user_task})
-                state.history.append({"role": "assistant", "content": final_text})
+                state.history.append({"role": "assistant", "content": history_text})
                 state.memory.log_turn(state.session_id, "user", user_task)
-                state.memory.log_turn(state.session_id, "assistant", final_text)
+                state.memory.log_turn(state.session_id, "assistant", history_text)
                 if changed_files:
                     state.task_cache.clear()
-                else:
+                elif not ungrounded and (task_log or not state.project_root):
+                    # Ответы с открытым проектом без единого вызова инструмента
+                    # не кэшируем: иначе выдуманный ответ вернётся без вызова LLM.
                     state.task_cache[cache_key] = (final_text, changed_files)
                 task_summary = summarize_task(state, user_task, task_log, final_text) if task_log else None
                 return final_text, changed_files, task_summary
