@@ -240,7 +240,7 @@ def test_run_task_simple_final_response(state, fake_call_llm):
     assert changed == []
     fake_call_llm.assert_called_once()
     assert fake_call_llm.call_args.kwargs["tier"] == "fast"
-    assert list(state.task_cache.values())[0][0] == "Готово!"
+    assert state.task_cache == {}  # ответы без вызова инструмента при открытом проекте не кэшируем
 
 
 def test_run_task_friendlifies_error_in_final_content(state, fake_call_llm):
