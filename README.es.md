@@ -23,6 +23,8 @@ reintentos en caso de sobrecarga.
 > todo lo que requiere una decisión creativa (arquitectura, trabajo
 > visual, elección de assets) lo sigue haciendo la persona.
 
+**Probado en Python 3.14.**
+
 ---
 
 ## Captura de pantalla
@@ -131,6 +133,25 @@ nombre de modelo vigente. Listas de modelos actualizadas:
 
 ---
 
+## Modelos por defecto y orden de respaldo
+
+El agente usa dos niveles de modelos: **fast** (búsqueda de archivos, clasificación) y **strong** (refactorización, generación de código grande). Los valores por defecto están definidos en `agent/llm.py` y se pueden sobrescribir mediante `.env`.
+
+| Proveedor | Fast (por defecto) | Strong (por defecto) |
+|-----------|--------------------|----------------------|
+| Groq | `openai/gpt-oss-20b` | `openai/gpt-oss-120b` |
+| OpenRouter | `meta-llama/llama-3.1-8b-instruct:free` | `meta-llama/llama-3.3-70b-instruct:free` |
+| Gemini | `gemini-2.5-flash` | `gemini-2.5-pro` |
+
+**Cadena de respaldo** (se intentan en orden hasta que uno funciona):
+
+- **fast**: Groq → Gemini → OpenRouter
+- **strong**: OpenRouter → Groq → Gemini
+
+Cada proveedor se reintenta una vez en caso de fallo; si los tres fallan, el agente espera 5 s y luego 15 s antes de reintentar toda la cadena.
+
+---
+
 ## Instalación desde el código fuente (para desarrolladores)
 
 ```bash
@@ -196,6 +217,7 @@ que alcanzó a completarse. La reversión se hace a través del punto de
 ## Tests
 
 ```bash
+pip install -r requirements-dev.txt
 pytest
 ```
 

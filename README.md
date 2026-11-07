@@ -19,6 +19,8 @@ Runs on **free tiers** through a chain of three providers
 > understanding of the code — anything requiring creative decisions
 > (architecture, visual work, asset choices) is still done by hand.
 
+**Tested on Python 3.14.**
+
 ---
 
 ## Screenshot
@@ -124,6 +126,25 @@ Up-to-date model lists:
 
 ---
 
+## Default models & fallback order
+
+The agent uses two model tiers: **fast** (file search, classification) and **strong** (refactoring, large code generation). Defaults are defined in `agent/llm.py` and can be overridden via `.env`.
+
+| Provider | Fast (default) | Strong (default) |
+|----------|----------------|------------------|
+| Groq | `openai/gpt-oss-20b` | `openai/gpt-oss-120b` |
+| OpenRouter | `meta-llama/llama-3.1-8b-instruct:free` | `meta-llama/llama-3.3-70b-instruct:free` |
+| Gemini | `gemini-2.5-flash` | `gemini-2.5-pro` |
+
+**Fallback chain** (tried in order until one succeeds):
+
+- **fast**: Groq → Gemini → OpenRouter
+- **strong**: OpenRouter → Groq → Gemini
+
+Each provider is retried once on failure; if all three fail, the agent waits 5 s then 15 s before retrying the whole chain.
+
+---
+
 ## Installing from source (for developers)
 
 ```bash
@@ -187,6 +208,7 @@ Rollback happens through your saved `git commit` checkpoint.
 ## Tests
 
 ```bash
+pip install -r requirements-dev.txt
 pytest
 ```
 
